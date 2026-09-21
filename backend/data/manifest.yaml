@@ -1,0 +1,85 @@
+datasets:
+  - id: retrenchment_by_industry
+    source: data_gov_sg
+    mode: file
+    title: "Number of Retrenched Employees by Industry and Occupational Group"
+    resource_id: d_6d1fcbd205b908c27c174db08432346a
+    file_path: incoming/data_gov_sg/NumberofRetrenchedEmployeesbyIndustryandOccupationAnnual.csv
+    format: csv
+    topic: [employment, retrenchment, industry, occupation]
+    column_meta:
+      year: {type: int, description: "Calendar year"}
+      industry: {type: category, description: "Industry classification"}
+      occupation: {type: category, description: "Occupational group"}
+      retrench: {type: numeric, unit: persons, description: "Number of retrenched employees; '-' means suppressed/negligible, not zero"}
+    min_year: 2006  # classification changed pre-2006; only stable years loaded
+
+  - id: job_vacancy_by_industry
+    source: data_gov_sg
+    mode: api
+    title: "Number of Job Vacancy by Industry and Occupation - Annual"
+    resource_id: d_889d11a2b0a53b235abb64e3f4e0a47b
+    api_fallback: file
+    file_path: incoming/data_gov_sg/NumberofJobVacancybyIndustryandOccupationAnnual.csv
+    format: csv
+    topic: [employment, job vacancy, industry, occupation]
+    column_meta:
+      year: {type: int, description: "Calendar year"}
+      industry: {type: category, description: "Industry classification"}
+      occupation: {type: category, description: "Occupational group"}
+      job_vacancy: {type: numeric, unit: positions, description: "Number of job vacancies; '-' means suppressed/negligible, not zero"}
+
+  - id: graduate_employment_survey
+    source: data_gov_sg
+    mode: file
+    title: "Graduate Employment Survey - NTU, NUS, SIT, SMU, SUSS & SUTD"
+    resource_id: d_3c55210de27fcccda2ed0c63fdd2b352
+    file_path: incoming/data_gov_sg/GraduateEmploymentSurveyNTUNUSSITSMUSUSSSUTD.csv
+    format: csv
+    topic: [education, graduate employment, salary, university]
+    column_meta:
+      year: {type: int}
+      university: {type: category}
+      school: {type: category}
+      degree: {type: category, description: "Footnote markers (**, #) stripped on ingest"}
+      employment_rate_overall: {type: numeric, unit: percent}
+      employment_rate_ft_perm: {type: numeric, unit: percent}
+      basic_monthly_mean: {type: numeric, unit: sgd}
+      basic_monthly_median: {type: numeric, unit: sgd}
+      gross_monthly_mean: {type: numeric, unit: sgd}
+      gross_monthly_median: {type: numeric, unit: sgd}
+      gross_mthly_25_percentile: {type: numeric, unit: sgd}
+      gross_mthly_75_percentile: {type: numeric, unit: sgd}
+
+  - id: mom_usual_hours_by_occupation_2023
+    source: mom
+    mode: file
+    title: "MOM - Usual Hours Worked by Occupation and Sex, 2023"
+    resource_id: null
+    file_path: incoming/mom/LFR2023_SectionF.xlsx
+    sheet_name: F2
+    format: xlsx
+    topic: [employment, hours worked, occupation]
+    year: 2023
+
+  - id: mom_usual_hours_by_occupation_2024
+    source: mom
+    mode: file
+    title: "MOM - Usual Hours Worked by Occupation and Sex, 2024"
+    resource_id: null
+    file_path: incoming/mom/LFR2024_SectionF.xlsx
+    sheet_name: F2
+    format: xlsx
+    topic: [employment, hours worked, occupation]
+    year: 2024
+
+  - id: mom_usual_hours_by_occupation_2025
+    source: mom
+    mode: file
+    title: "MOM - Usual Hours Worked by Occupation and Sex, 2025"
+    resource_id: null
+    file_path: incoming/mom/LFR2025_SectionF.xlsx
+    sheet_name: F2
+    format: xlsx
+    topic: [employment, hours worked, occupation]
+    year: 2025
