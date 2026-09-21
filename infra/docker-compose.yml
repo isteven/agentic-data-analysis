@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: apda
+      POSTGRES_PASSWORD: apda
+      POSTGRES_DB: apda
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apda"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://apda:apda@db:5432/apda
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../backend/data:/app/data
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    env_file:
+      - ../frontend/.env
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
