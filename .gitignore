@@ -1,0 +1,55 @@
+# Environment / secrets
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE / tooling
+.vscode/
+.idea/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Docker
+infra/cloud/.terraform/
+infra/cloud/*.tfstate*
+
+# App runtime data (large raw source files can be regenerated; keep the manifest)
+backend/.cache/
+
+# Planning/process docs - kept locally for reference, not part of the submission.
+# The four spec-required docs (README.md, ARCHITECTURE.md, TESTING.md, DATA_SOURCES.md)
+# are NOT covered by this and remain tracked.
+/requirements.md
+/requirements.docx
+/dataset.md
+/solutioning.md
+/project-management.md
+fetch_dataset.py
+**/README.md
+!/README.md
