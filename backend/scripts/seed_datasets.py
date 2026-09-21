@@ -9,6 +9,7 @@ from sqlalchemy import select
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.data.parsers.csv_parser import read_csv  # noqa: E402
+from app.data.parsers.excel_parser import read_mom_hours_sheet  # noqa: E402
 from app.db.session import AsyncSessionLocal  # noqa: E402
 from app.models.dataset import Dataset  # noqa: E402
 
@@ -35,6 +36,8 @@ def build_dataframe(entry: dict):
 
     if entry["format"] == "csv":
         df = read_csv(str(path))
+    elif entry["format"] == "xlsx":
+        df = read_mom_hours_sheet(str(path), entry["sheet_name"])
     else:
         raise NotImplementedError(f"Format '{entry['format']}' not yet handled (dataset: {entry['id']})")
 
