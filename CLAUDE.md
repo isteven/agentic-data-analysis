@@ -154,5 +154,7 @@ Examples:
 - ci(github): add new environment variable
 - chore(repo): add gitignore for env files and build artifacts
 
-Note: WIP means the work on that commit is not yet done. 
+Note: 
+1. WIP in the commit message means the work on that commit is not yet done. 
+2. Prevent PRs that are too big. Like, 10 commmits or more in a single PR is definitely too big. Try to break it down.
 
