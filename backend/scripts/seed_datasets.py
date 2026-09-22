@@ -3,18 +3,15 @@ import hashlib
 import sys
 from pathlib import Path
 
-import yaml
 from sqlalchemy import select
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.data.parsers.csv_parser import read_csv  # noqa: E402
-from app.data.parsers.excel_parser import read_mom_hours_sheet  # noqa: E402
-from app.db.session import AsyncSessionLocal  # noqa: E402
-from app.models.dataset import Dataset  # noqa: E402
-
-DATA_ROOT = Path(__file__).resolve().parent.parent / "data"
-MANIFEST_PATH = DATA_ROOT / "manifest.yaml"
+from app.data.manifest import DATA_ROOT, load_manifest
+from app.data.parsers.csv_parser import read_csv
+from app.data.parsers.excel_parser import read_mom_hours_sheet
+from app.db.session import AsyncSessionLocal
+from app.models.dataset import Dataset
 
 # Industry x occupation classification changed pre-2006 (84-129 rows/year vs. 126 after);
 # only the stabilized years are loaded.
@@ -23,12 +20,6 @@ RETRENCHMENT_MIN_YEAR = 2006
 
 def content_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def load_manifest() -> list[dict]:
-    with open(MANIFEST_PATH) as f:
-        manifest = yaml.safe_load(f)
-    return manifest["datasets"]
 
 
 def build_dataframe(entry: dict):
