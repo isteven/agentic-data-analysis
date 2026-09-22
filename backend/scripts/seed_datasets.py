@@ -43,9 +43,16 @@ def build_dataframe(entry: dict):
     return df
 
 
+def _has_seedable_file(entry: dict) -> bool:
+    """True for file-mode datasets, and for api-mode datasets with a file fallback -
+    both cases are seeded from the same local file via build_dataframe()."""
+    mode = entry.get("mode")
+    return mode == "file" or (mode == "api" and entry.get("api_fallback") == "file")
+
+
 async def seed_dataset(session, entry: dict) -> None:
-    if entry.get("mode") != "file":
-        print(f"skip {entry['id']}: mode={entry.get('mode')} (not a file-mode dataset)")
+    if not _has_seedable_file(entry):
+        print(f"skip {entry['id']}: mode={entry.get('mode')}, no file fallback configured")
         return
 
     path = DATA_ROOT / entry["file_path"]
