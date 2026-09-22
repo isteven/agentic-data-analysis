@@ -10,6 +10,7 @@ class RawExtract(TypedDict):
     dataset_id: str
     row_count: int
     columns: list[str]
+    source_mode: str  # "file" | "live" | "file_fallback"
 
 
 class TraceEvent(TypedDict):
