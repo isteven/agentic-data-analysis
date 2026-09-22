@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { AgentTrace } from "@/components/AgentTrace";
+import type { QueryResponse } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function Home() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState<QueryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -25,8 +27,8 @@ export default function Home() {
       if (!res.ok) {
         throw new Error(`Request failed with status ${res.status}`);
       }
-      const data = await res.json();
-      setResult(data.report_markdown ?? JSON.stringify(data, null, 2));
+      const data: QueryResponse = await res.json();
+      setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -67,9 +69,12 @@ export default function Home() {
         )}
 
         {result && (
-          <pre className="mt-6 whitespace-pre-wrap rounded border border-zinc-200 bg-white p-4 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-            {result}
-          </pre>
+          <>
+            <pre className="mt-6 whitespace-pre-wrap rounded border border-zinc-200 bg-white p-4 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+              {result.report_markdown ?? JSON.stringify(result, null, 2)}
+            </pre>
+            <AgentTrace steps={result.trace} />
+          </>
         )}
       </main>
     </div>
