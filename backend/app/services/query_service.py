@@ -11,27 +11,32 @@ from app.models.dataset import Dataset
 from app.models.finding import Finding
 
 
-async def run_query(session: AsyncSession, query_text: str) -> tuple[AnalysisRun, list[dict]]:
-    run_id = uuid.uuid4()
+async def execute_graph(session: AsyncSession, query_text: str, run_id: uuid.UUID) -> dict:
     state = new_state(query=query_text, run_id=str(run_id))
 
     graph = build_graph(session)
     try:
         final_state = await graph.ainvoke(state)
         # status column is varchar(16) - keep values short
-        status = "completed" if not final_state.get("errors") else "partial"
+        final_state["status"] = "completed" if not final_state.get("errors") else "partial"
     except Exception as exc:  # noqa: BLE001 - unrecoverable graph failure, degrade gracefully
         final_state = state
         final_state["errors"].append({"node_name": "graph", "message": str(exc)})
-        status = "failed"
+        final_state["status"] = "failed"
     finally:
         clear_dataframes(str(run_id))
 
+    return final_state
+
+
+async def persist_run(
+    session: AsyncSession, run_id: uuid.UUID, query_text: str, final_state: dict
+) -> tuple[AnalysisRun, list[dict]]:
     run = AnalysisRun(
         id=run_id,
         query_text=query_text,
         provider_used="openai",
-        status=status,
+        status=final_state["status"],
         report_markdown=final_state.get("report_markdown"),
     )
     session.add(run)
@@ -75,3 +80,9 @@ async def run_query(session: AsyncSession, query_text: str) -> tuple[AnalysisRun
 
     await session.commit()
     return run, trace_events
+
+
+async def run_query(session: AsyncSession, query_text: str) -> tuple[AnalysisRun, list[dict]]:
+    run_id = uuid.uuid4()
+    final_state = await execute_graph(session, query_text, run_id)
+    return await persist_run(session, run_id, query_text, final_state)
