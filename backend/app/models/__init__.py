@@ -1,4 +1,5 @@
 from app.models.dataset import Dataset
+from app.models.dataset_record import DatasetRecord
 from app.models.analysis_run import AnalysisRun, AnalysisRunDataset
 from app.models.agent_trace import AgentTrace
 from app.models.finding import Finding
@@ -6,6 +7,7 @@ from app.models.session import Session
 
 __all__ = [
     "Dataset",
+    "DatasetRecord",
     "AnalysisRun",
     "AnalysisRunDataset",
     "AgentTrace",

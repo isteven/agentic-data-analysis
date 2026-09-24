@@ -3,7 +3,7 @@ import hashlib
 import sys
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, exists, insert, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -12,8 +12,11 @@ from app.data.manifest import DATA_ROOT, load_manifest
 from app.data.parsers.csv_parser import read_csv
 from app.data.parsers.excel_parser import read_mom_hours_sheet
 from app.data.profiler import profile_dataframe
+from app.data.records import to_records
+from app.data.views import rebuild_views
 from app.db.session import AsyncSessionLocal
 from app.models.dataset import Dataset
+from app.models.dataset_record import DatasetRecord
 
 
 def content_hash(path: Path) -> str:
@@ -60,8 +63,13 @@ async def seed_dataset(session, entry: dict) -> None:
     existing = await session.scalar(
         select(Dataset).where(Dataset.dataset_key == entry["id"])
     )
-    # also re-seed rows created before profiling existed, so every dataset gets a profile
-    if existing is not None and existing.content_hash == hash_ and existing.schema_profile:
+    # also re-seed datasets seeded before profiles / stored rows existed
+    if (
+        existing is not None
+        and existing.content_hash == hash_
+        and existing.schema_profile
+        and await _has_records(session, existing.id)
+    ):
         print(f"skip {entry['id']}: already seeded, content unchanged")
         return
 
@@ -98,8 +106,28 @@ async def seed_dataset(session, entry: dict) -> None:
         existing.schema_profile = schema_profile
         existing.raw_cache_path = str(path)
 
+    await session.flush()  # assigns existing.id for a new dataset
+    await _replace_records(session, existing.id, df)
     await session.commit()
     print(f"seeded {entry['id']}: {quality_report['row_count']} rows, {quality_report['column_count']} columns")
+
+
+async def _has_records(session, dataset_id) -> bool:
+    return bool(
+        await session.scalar(
+            select(exists().where(DatasetRecord.dataset_id == dataset_id))
+        )
+    )
+
+
+async def _replace_records(session, dataset_id, df) -> None:
+    await session.execute(delete(DatasetRecord).where(DatasetRecord.dataset_id == dataset_id))
+    rows = [
+        {"dataset_id": dataset_id, "row_num": i, "record": record}
+        for i, record in enumerate(to_records(df))
+    ]
+    if rows:
+        await session.execute(insert(DatasetRecord), rows)
 
 
 async def main() -> None:
@@ -107,6 +135,11 @@ async def main() -> None:
     async with AsyncSessionLocal() as session:
         for entry in manifest:
             await seed_dataset(session, entry)
+        # Views are derived, so rebuilding them every run keeps them in step with the
+        # manifest and profiles even when no dataset changed.
+        views = await rebuild_views(session, manifest)
+        await session.commit()
+        print(f"views rebuilt in schema data: {', '.join(views)}")
 
 
 if __name__ == "__main__":
