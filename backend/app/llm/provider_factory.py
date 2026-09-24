@@ -34,18 +34,22 @@ def _build_openai(settings, model_tier: Literal["fast", "quality"]) -> BaseChatM
     from langchain_openai import ChatOpenAI
 
     model = settings.openai_model_fast if model_tier == "fast" else settings.openai_model_quality
-    return ChatOpenAI(model=model, api_key=settings.openai_api_key)
+    return ChatOpenAI(
+        model=model, api_key=settings.openai_api_key, temperature=settings.llm_temperature
+    )
 
 
 def _build_bedrock(settings, model_tier: Literal["fast", "quality"]) -> BaseChatModel:
     if not settings.bedrock_enabled:
         raise RuntimeError(
             "Bedrock provider requested but LLM_ENABLE_BEDROCK is false or AWS credentials "
-            "are not set. See ARCHITECTURE.md Section 3.2 for setup requirements."
+            "are not set. See ARCHITECTURE.md Section 4 for setup requirements."
         )
     from langchain_aws import ChatBedrockConverse
 
     model_id = (
         settings.bedrock_model_id_fast if model_tier == "fast" else settings.bedrock_model_id_quality
     )
-    return ChatBedrockConverse(model=model_id, region_name=settings.aws_region)
+    return ChatBedrockConverse(
+        model=model_id, region_name=settings.aws_region, temperature=settings.llm_temperature
+    )
