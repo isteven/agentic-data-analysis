@@ -11,7 +11,7 @@ datasets:
       year: {type: int, description: "Calendar year"}
       industry: {type: category, description: "Industry classification"}
       occupation: {type: category, description: "Occupational group"}
-      retrench: {type: numeric, unit: persons, description: "Number of retrenched employees; '-' means suppressed/negligible, not zero"}
+      retrench: {type: numeric, unit: persons, additive: true, description: "Number of retrenched employees; '-' means suppressed/negligible, not zero"}
     min_year: 2006  # classification changed pre-2006; only stable years loaded
     # Rows to aggregate over when a query doesn't filter on that column. `industry`
     # mixes top-level sectors with their sub-industries (e.g. manufacturing +
@@ -32,7 +32,7 @@ datasets:
       year: {type: int, description: "Calendar year"}
       industry: {type: category, description: "Industry classification"}
       occupation: {type: category, description: "Occupational group"}
-      job_vacancy: {type: numeric, unit: positions, description: "Number of job vacancies; '-' means suppressed/negligible, not zero"}
+      job_vacancy: {type: numeric, unit: positions, additive: true, description: "Number of job vacancies; '-' means suppressed/negligible, not zero"}
     # Same industry hierarchy as retrenchment. `occupation` also carries two
     # classification schemes side by side from 2013 (3-group and PME/non-PME) - use
     # the 3-group scheme, which covers every year.
@@ -56,14 +56,14 @@ datasets:
       university: {type: category}
       school: {type: category}
       degree: {type: category, description: "Footnote markers (**, #) stripped on ingest"}
-      employment_rate_overall: {type: numeric, unit: percent}
-      employment_rate_ft_perm: {type: numeric, unit: percent}
-      basic_monthly_mean: {type: numeric, unit: sgd}
-      basic_monthly_median: {type: numeric, unit: sgd}
-      gross_monthly_mean: {type: numeric, unit: sgd}
-      gross_monthly_median: {type: numeric, unit: sgd}
-      gross_mthly_25_percentile: {type: numeric, unit: sgd}
-      gross_mthly_75_percentile: {type: numeric, unit: sgd}
+      employment_rate_overall: {type: numeric, unit: percent, additive: false}
+      employment_rate_ft_perm: {type: numeric, unit: percent, additive: false}
+      basic_monthly_mean: {type: numeric, unit: sgd, additive: false}
+      basic_monthly_median: {type: numeric, unit: sgd, additive: false}
+      gross_monthly_mean: {type: numeric, unit: sgd, additive: false}
+      gross_monthly_median: {type: numeric, unit: sgd, additive: false}
+      gross_mthly_25_percentile: {type: numeric, unit: sgd, additive: false}
+      gross_mthly_75_percentile: {type: numeric, unit: sgd, additive: false}
 
   - id: mom_usual_hours_by_occupation_2023
     source: mom
@@ -75,6 +75,8 @@ datasets:
     format: xlsx
     topic: [employment, hours worked, occupation]
     year: 2023
+    column_meta:
+      value: {type: numeric, unit: thousand persons, additive: true, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}
     # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
     default_slice:
       sex: [Total]
@@ -91,6 +93,8 @@ datasets:
     format: xlsx
     topic: [employment, hours worked, occupation]
     year: 2024
+    column_meta:
+      value: {type: numeric, unit: thousand persons, additive: true, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}
     # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
     default_slice:
       sex: [Total]
@@ -107,6 +111,8 @@ datasets:
     format: xlsx
     topic: [employment, hours worked, occupation]
     year: 2025
+    column_meta:
+      value: {type: numeric, unit: thousand persons, additive: true, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}
     # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
     default_slice:
       sex: [Total]
