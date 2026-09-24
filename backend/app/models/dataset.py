@@ -21,4 +21,5 @@ class Dataset(Base):
     raw_cache_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     quality_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    schema_profile: Mapped[list | None] = mapped_column(JSON, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
