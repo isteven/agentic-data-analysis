@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     llm_default_provider: Literal["openai", "bedrock"] = "openai"
     llm_fallback_provider: Literal["openai", "bedrock"] = "bedrock"
+    # 0 = same question, same answer: needed for SQL generation and consistency tests.
+    # Without it providers default to 1.0 (OpenAI), which varied answers run to run.
+    llm_temperature: float = 0.0
 
     openai_api_key: str = ""
     openai_model_fast: str = "gpt-4o-mini"
