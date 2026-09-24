@@ -50,6 +50,7 @@ backend/.cache/
 /dataset.md
 /solutioning.md
 /project-management.md
+/agentic-flow.md
 fetch_dataset.py
 **/README.md
 !/README.md
