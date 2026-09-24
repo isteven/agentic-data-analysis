@@ -4,6 +4,8 @@ import pandas as pd
 
 from app.agents.state import AgentState, get_dataframe
 from app.agents.trace import emit_trace
+from app.data.cleaning import apply_default_slice
+from app.data.manifest import load_manifest
 
 NODE_NAME = "analytics"
 
@@ -12,15 +14,17 @@ _NUMERIC_METRIC_CANDIDATES = ["retrench", "job_vacancy", "value"]
 
 
 def _find_query_filters(query: str, df: pd.DataFrame) -> dict[str, str]:
-    """Match query words against unique values of categorical (object) columns."""
+    """Match query words against unique values of categorical (text) columns."""
     filters: dict[str, str] = {}
     query_lower = query.lower()
-    for col in df.select_dtypes(include="object").columns:
+    text_columns = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+    for col in text_columns:
         for value in df[col].dropna().unique():
             value_str = str(value)
             if len(value_str) < 3:
                 continue
-            if re.search(re.escape(value_str.lower()), query_lower):
+            # whole-word match, so "female" doesn't also match "Male"
+            if re.search(rf"\b{re.escape(value_str.lower())}\b", query_lower):
                 filters[col] = value_str
                 break
     return filters
@@ -37,11 +41,14 @@ def _pick_metric_column(df: pd.DataFrame) -> str | None:
     return None
 
 
-def _analyze_dataset(dataset_id: str, df: pd.DataFrame, query: str, state: AgentState) -> None:
+def _analyze_dataset(
+    dataset_id: str, df: pd.DataFrame, query: str, state: AgentState, entry: dict
+) -> None:
     filters = _find_query_filters(query, df)
     filtered_df = df
     for col, value in filters.items():
         filtered_df = filtered_df[filtered_df[col] == value]
+    filtered_df = apply_default_slice(filtered_df, entry, filtered_columns=set(filters))
 
     filter_desc = ", ".join(f"{k}={v}" for k, v in filters.items()) or "no specific filter matched"
     emit_trace(
@@ -104,11 +111,12 @@ def _analyze_dataset(dataset_id: str, df: pd.DataFrame, query: str, state: Agent
 
 
 async def analytics_node(state: AgentState) -> AgentState:
+    manifest_by_id = {entry["id"]: entry for entry in load_manifest()}
     for extract in state["raw_extracts"]:
         dataset_id = extract["dataset_id"]
         df = get_dataframe(state["run_id"], dataset_id)
         if df is None:
             continue
-        _analyze_dataset(dataset_id, df, state["query"], state)
+        _analyze_dataset(dataset_id, df, state["query"], state, manifest_by_id.get(dataset_id, {}))
 
     return state

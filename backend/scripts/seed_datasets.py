@@ -7,15 +7,12 @@ from sqlalchemy import select
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.data.cleaning import clean_dataset
 from app.data.manifest import DATA_ROOT, load_manifest
 from app.data.parsers.csv_parser import read_csv
 from app.data.parsers.excel_parser import read_mom_hours_sheet
 from app.db.session import AsyncSessionLocal
 from app.models.dataset import Dataset
-
-# Industry x occupation classification changed pre-2006 (84-129 rows/year vs. 126 after);
-# only the stabilized years are loaded.
-RETRENCHMENT_MIN_YEAR = 2006
 
 
 def content_hash(path: Path) -> str:
@@ -32,13 +29,10 @@ def build_dataframe(entry: dict):
     else:
         raise NotImplementedError(f"Format '{entry['format']}' not yet handled (dataset: {entry['id']})")
 
-    if entry["id"] == "retrenchment_by_industry":
-        before = len(df)
-        df = df[df["year"] >= RETRENCHMENT_MIN_YEAR].reset_index(drop=True)
-        print(
-            f"  filtered to stabilized-classification years (>= {RETRENCHMENT_MIN_YEAR}): "
-            f"{before} -> {len(df)} rows"
-        )
+    before = len(df)
+    df = clean_dataset(df, entry)
+    if len(df) != before:
+        print(f"  cleaning rules applied (manifest): {before} -> {len(df)} rows")
 
     return df
 

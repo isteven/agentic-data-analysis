@@ -13,6 +13,11 @@ datasets:
       occupation: {type: category, description: "Occupational group"}
       retrench: {type: numeric, unit: persons, description: "Number of retrenched employees; '-' means suppressed/negligible, not zero"}
     min_year: 2006  # classification changed pre-2006; only stable years loaded
+    # Rows to aggregate over when a query doesn't filter on that column. `industry`
+    # mixes top-level sectors with their sub-industries (e.g. manufacturing +
+    # electronic products); summing every row double-counts. Top-level sectors only.
+    default_slice:
+      industry: [manufacturing, construction, services, services producing industries, others]
 
   - id: job_vacancy_by_industry
     source: data_gov_sg
@@ -28,6 +33,15 @@ datasets:
       industry: {type: category, description: "Industry classification"}
       occupation: {type: category, description: "Occupational group"}
       job_vacancy: {type: numeric, unit: positions, description: "Number of job vacancies; '-' means suppressed/negligible, not zero"}
+    # Same industry hierarchy as retrenchment. `occupation` also carries two
+    # classification schemes side by side from 2013 (3-group and PME/non-PME) - use
+    # the 3-group scheme, which covers every year.
+    default_slice:
+      industry: [manufacturing, construction, services, services producing industries, others]
+      occupation:
+        - professionals, managers, executives and technicians
+        - clerical, sales and services workers
+        - production and transport operators, cleaners and labourers
 
   - id: graduate_employment_survey
     source: data_gov_sg
@@ -61,6 +75,11 @@ datasets:
     format: xlsx
     topic: [employment, hours worked, occupation]
     year: 2023
+    # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
+    default_slice:
+      sex: [Total]
+      hours_bucket: [Total]
+      occupation: [Total]
 
   - id: mom_usual_hours_by_occupation_2024
     source: mom
@@ -72,6 +91,11 @@ datasets:
     format: xlsx
     topic: [employment, hours worked, occupation]
     year: 2024
+    # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
+    default_slice:
+      sex: [Total]
+      hours_bucket: [Total]
+      occupation: [Total]
 
   - id: mom_usual_hours_by_occupation_2025
     source: mom
@@ -83,3 +107,8 @@ datasets:
     format: xlsx
     topic: [employment, hours worked, occupation]
     year: 2025
+    # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
+    default_slice:
+      sex: [Total]
+      hours_bucket: [Total]
+      occupation: [Total]
