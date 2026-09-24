@@ -1,7 +1,7 @@
 import pandas as pd
 
 # '-'/'na' mean suppressed/unavailable, not zero - must become NaN, not 0.
-SENTINEL_VALUES = ["-", "na", "NA", "n.a.", ""]
+SENTINEL_VALUES = ["-", "na", "NA", "n.a.", "N.A.", ""]
 
 
 def read_csv(path: str) -> pd.DataFrame:

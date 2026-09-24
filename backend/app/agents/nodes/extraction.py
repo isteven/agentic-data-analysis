@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.state import AgentState, store_dataframe
 from app.agents.trace import emit_trace
 from app.data.api_client import fetch_datastore
+from app.data.cleaning import clean_dataset
 from app.data.manifest import load_manifest
 from app.data.parsers.csv_parser import read_csv
 from app.data.parsers.excel_parser import read_mom_hours_sheet
@@ -98,6 +99,7 @@ async def extraction_node(state: AgentState, session: AsyncSession) -> AgentStat
                 state["errors"].append({"node_name": NODE_NAME, "message": str(exc)})
                 continue
 
+        df = clean_dataset(df, entry)
         store_dataframe(state["run_id"], dataset_id, df)
         state["raw_extracts"].append(
             {
