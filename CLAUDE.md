@@ -10,17 +10,23 @@ Next.js frontend and FastAPI backend, deployed via Docker Compose.
 
 **Read `ARCHITECTURE.md` and `DATA_SOURCES.md` before making non-trivial changes.**
 `ARCHITECTURE.md` is the living design doc for the full target system (multi-agent
-LangGraph pipeline, arq/Redis worker, multi-provider LLM abstraction, WebSocket trace
+LangGraph pipeline, SAQ/Redis worker, multi-provider LLM abstraction, SSE trace
 streaming, cost tracking, etc.) — it explains *why* things are shaped the way they are,
-including rejected alternatives. `DATA_SOURCES.md` documents the dataset catalog,
-provenance, and known data-quality quirks (sentinel values, sheet-naming drift,
-classification breaks) that the seed script works around.
+including rejected alternatives. See its §2 for a standing spec-vs-actual status
+table per layer. `DATA_SOURCES.md` documents the dataset catalog, provenance, and known
+data-quality quirks (sentinel values, sheet-naming drift, classification breaks) that the
+seed script works around.
 
-**Current implementation status: only the M1 "walking skeleton" milestone is built.**
-The backend today is a single synchronous FastAPI route that queries one seeded dataset
-and calls an LLM directly — there is no LangGraph agent graph, no arq worker, no Redis
-usage, and no WebSocket trace streaming yet, even though `ARCHITECTURE.md` describes
-that full target design. Don't assume any component described in `ARCHITECTURE.md`
+**Current implementation status: M1 is complete; M2 is in progress.** The real 5-node
+LangGraph pipeline (coordinator → extraction → analytics → report_writer → validator) is
+built and merged to `main`. Typed Postgres views over the stored dataset rows, shaped by
+structure inferred at ingest, are built for the planned SQL planner; the query path still
+uses the pandas analytics node. The live data.gov.sg API client exists but no current
+dataset uses `mode: api`. Still outstanding from M2: the SAQ worker task exists
+(`backend/app/worker.py`) but no route enqueues it yet — `/api/queries` still runs the
+graph synchronously in-request; there is no SSE trace streaming yet (the frontend
+fetches the trace once, after the run completes); Bedrock is stubbed, not live; no
+cost/token tracking yet. Don't assume any component described in `ARCHITECTURE.md`
 exists in code without checking; `git log` and the actual `backend/app/` tree are the
 source of truth for what's built vs. planned. `solutioning.md` and
 `project-management.md` (decision log and milestone tracker) are intentionally
@@ -46,8 +52,9 @@ The app's lifespan hook (`app/main.py`) runs Alembic migrations and the seed scr
 automatically on startup — the manual commands above are for running them standalone
 (e.g. after schema/data changes) or when iterating outside the full app startup.
 
-No `tests/` directory exists yet, despite `pyproject.toml` having pytest config
-(`testpaths = ["tests"]`) — don't assume test infrastructure is in place.
+Unit tests live in `backend/tests/unit/` (no DB, no LLM). Install dev deps with
+`uv sync --extra dev` (a plain `uv sync` drops pytest), then run
+`PYTHONPATH=. uv run pytest tests/unit` from `backend/`. No integration tests yet.
 
 ### Frontend (`frontend/`)
 
@@ -65,15 +72,17 @@ cd infra
 docker compose up --build
 ```
 
-Brings up `db` (postgres:16), `redis` (redis:7, currently unused by any code path —
-reserved for the planned arq worker), `backend`, `frontend`. Requires
+Brings up `db` (postgres:16), `redis` (redis:7, not yet wired into Compose as a worker
+service — `backend/app/worker.py`'s SAQ task exists but nothing enqueues it yet),
+`backend`, `frontend`. Requires
 `backend/.env` and `frontend/.env` to exist first (copy from the `.env.example` in
 each directory — **each service owns its own env file, there is no root `.env`**).
 
 ### Running without Docker
 
-The current code path (single sync FastAPI route, no arq/Redis usage) only actually
-needs Postgres — not Redis — so it's runnable with a native Postgres install:
+The current code path (sync FastAPI route running the LangGraph pipeline in-request, no
+SAQ/Redis usage yet) only actually needs Postgres — not Redis — so it's runnable with a
+native Postgres install:
 `uv sync` → `uv run alembic upgrade head` → `uv run python -m scripts.seed_datasets` →
 `uv run uvicorn app.main:app --port 8000`, plus `npm run dev` in `frontend/`. Point
 `DATABASE_URL` in `backend/.env` at `localhost` instead of the Compose service name `db`.
@@ -88,17 +97,23 @@ needs Postgres — not Redis — so it's runnable with a native Postgres install
   source, local file path, format, and `mode: file` vs `mode: api`. Each dataset
   declares its own extraction mode; this is a property of the dataset, not a per-query
   toggle (see `ARCHITECTURE.md` §4.5 for why).
-- **Seed script** (`backend/scripts/seed_datasets.py`) is the only place `file`-mode
-  datasets get parsed and cleaned — deterministic, hand-written rules per dataset
-  (sentinel-value handling, MOM sheet footer/header skipping, a classification-era
-  filter on the retrenchment series). It skips re-seeding a dataset whose source file
-  content hash hasn't changed. Agents/routes read from Postgres, never re-parse raw
-  files at query time.
+- **Don't rely on hardcoded values or variables** as there can be more CSV files (or any other data format) with different structures. This is an agentic application and it should be dynamic enough to cater for various data structures.
+- **Seed script** (`backend/scripts/seed_datasets.py`) parses each file, profiles it,
+  stores its rows in `dataset_records` and rebuilds the typed views in the `data`
+  schema. Which rows are totals, how values nest and which measures may be summed is
+  inferred from the numbers (`app/data/structure.py`), not declared per dataset. It
+  re-seeds when a file's content hash or `PROFILER_VERSION` changes, and prunes
+  datasets removed from the manifest.
+- **Incoming data is curated mock data**: files in `backend/data/incoming/` are
+  derived from public downloads but edited (swapped, trimmed); don't treat drift from
+  the published originals as a bug.
 - **SQLAlchemy models use `sqlalchemy.dialects.postgresql.UUID` as the primary key type
-  on every table** (`backend/app/models/*.py`). This is Postgres-specific — switching to
-  SQLite or another engine is not a config change, it requires touching every model to
-  use a portable UUID type. Postgres is the only supported database engine right now,
-  despite `ARCHITECTURE.md` §5 mentioning a SQLite test fallback as a future intent.
+  on every table** (`backend/app/models/*.py`), plus JSONB columns. This is
+  Postgres-specific and deliberate — Postgres is the only supported database engine, by
+  design, not as a gap to eventually fill. (`ARCHITECTURE.md` §5 previously floated a
+  SQLite unit-test fallback; dropped — true unit tests mock the DB layer instead, and
+  tests that need a real engine use real Postgres via CI service containers, so a second
+  engine would only have duplicated that tier while catching fewer real bugs.)
 - **Excel parsing** (`backend/app/data/parsers/excel_parser.py`) is hand-rolled against
   the MOM `F2` sheet's specific layout (fixed header row, sex/hours-bucket row
   structure, blank-row footer boundary) — it is not a general-purpose Excel reader, and

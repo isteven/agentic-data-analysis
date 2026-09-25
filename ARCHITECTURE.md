@@ -1,6 +1,6 @@
 # Architecture -- Agentic Policy Data Analytics Platform
 
-> **Living document.** Every section states what is **built** today and what is **planned**. Status as of 2026-09-24: milestone M1 complete, M2 in progress.
+> **Living document.** Every section states what is **built** today and what is **planned**. Status as of 2026-09-25: milestone M1 complete, M2 in progress.
 
 ## 1. Overview
 
@@ -27,7 +27,7 @@ A full-stack agentic system: a policy researcher asks a question in plain Englis
                                                    +-------------+
 
 Worker also calls: LLM providers (via one provider factory),
-data.gov.sg Datastore API, local dataset files (backend/data/incoming/).
+data.gov.sg Datastore API (client built, no dataset uses it now), local dataset files (backend/data/incoming/).
 ```
 
 **Today:** the backend runs the whole pipeline synchronously inside `POST /api/queries` and returns the full report and trace in one response. The worker task exists but nothing enqueues it yet, and there is no SSE route.
@@ -44,12 +44,12 @@ data.gov.sg Datastore API, local dataset files (backend/data/incoming/).
 | Async / queue | SAQ worker on Redis | `run_query_task` built and publishes trace events; not wired to any route | Partial |
 | Real-time trace | Redis pub/sub -> SSE | Trace returned once, after the run | Partial |
 | LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI only; Bedrock stubbed | Partial |
-| Data sources | data.gov.sg + MOM; CSV, Excel, live API | All built; live API with file fallback verified both ways | Built |
-| Database | PostgreSQL | PostgreSQL, 6 tables, Alembic migrations | Built |
+| Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
+| Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
 | Visualisations | Charts driven by backend chart specs | None | Planned |
 | History / export | History page; PDF / JSON / CSV export | None | Planned |
 | Cost tracking | Tokens and estimated cost per run | None | Planned |
-| Testing | Unit, integration, LLM accuracy / consistency, data quality, load | 11 unit tests | Partial |
+| Testing | Unit, integration, LLM accuracy / consistency, data quality, load | 62 unit tests | Partial |
 | CI/CD | GitHub Actions | None | Planned |
 | Deployment | Docker Compose (5 services) + one-time validated AWS deploy | Docker Compose, 4 services (no worker yet) | Partial |
 
@@ -64,7 +64,7 @@ START -> coordinator -> extraction -> analytics -> report_writer -> validator ->
 | Node | LLM? | What it does |
 |---|---|---|
 | **coordinator** | Yes (fast tier) | Reads the dataset catalog (`manifest.yaml`) and picks the datasets relevant to the question (structured output) |
-| **extraction** | No | Loads each selected dataset: live data.gov.sg API with file fallback, or the local file; applies the manifest's cleaning rules (section 5.3) |
+| **extraction** | No | Loads each selected dataset: live data.gov.sg API with file fallback, or the local file; applies the shared cleaning (section 5.3) |
 | **analytics** | No | Matches query words to category values, keeps non-overlapping rows (`default_slice`), sums the measure per year plus a first-to-last change; emits `Finding`s |
 | **report_writer** | Yes (quality tier) | Writes the report from the findings only, citing the source dataset for each number |
 | **validator** | No | Extracts every number from the report and checks it matches a finding (1% tolerance); appends a warning if any don't |
@@ -99,7 +99,7 @@ intent -> coordinator -> planner -> SQL check -> run (read-only) -> report_write
 
 **Principles:**
 - LLMs interpret the question, choose what to compute and judge the result; **the database computes every number**. No LLM ever re-types data.
-- **Data rules live in the views, not the prompt:** views expose only rows that are safe to add up (no total rows mixed with their parts, no overlapping categories). A spike showed prompt instructions alone did not stop double-counting; view shape did.
+- **Data rules live in the views, not the prompt:** views expose only rows that are safe to add up (no total rows mixed with their parts, no overlapping categories). A spike showed prompt instructions alone did not stop double-counting; view shape did. The rules themselves are inferred from the data (section 5.5), not written per dataset.
 - Column knowledge comes from the schema profiled at ingest (section 5.5), so the query path has no hardcoded column names or operation lists.
 
 ### 3.3 Shared state
@@ -136,44 +136,54 @@ All agent code gets a model from `get_chat_model(provider, model_tier)` in `back
 
 ### 5.1 Datasets
 
-| Dataset | Source | Format | Mode | Coverage |
-|---|---|---|---|---|
-| `retrenchment_by_industry` | data.gov.sg | CSV | file | 2006-2025 (pre-2006 excluded: classification change) |
-| `job_vacancy_by_industry` | data.gov.sg | Live API (JSON) | api, file fallback | 1998-2025 |
-| `graduate_employment_survey` | data.gov.sg | CSV | file | 2013-2024 |
-| `mom_usual_hours_by_occupation_{2023,2024,2025}` | MOM | Excel (sheet F2) | file | one file per year |
+| Dataset | Source | Format | Coverage |
+|---|---|---|---|
+| `retrenchment_by_residential_status` | data.gov.sg | CSV | 2007-2025 |
+| `mrt_to_junior_college_travel` | data.gov.sg | CSV | no time dimension (189 stations x 18 colleges) |
+| `graduate_employment_survey` | data.gov.sg | CSV | 2013-2024 |
+| `mom_usual_hours_by_occupation_{2023,2024,2025}` | MOM | Excel (sheet F2) | one file per year, one combined view |
 
-Two government sources (data.gov.sg, MOM) and three formats (CSV, Excel, JSON API). SingStat is not used. Details and data-quality quirks: `DATA_SOURCES.md`.
+The files are curated mock data derived from public downloads. Details and known data issues: `DATA_SOURCES.md`.
 
 ### 5.2 Manifest
 
-`backend/data/manifest.yaml` catalogs every dataset: `id`, `source`, `title`, `topic`, `mode` (`file` | `api`), `file_path`, `format`, `sheet_name`, `resource_id`, `api_fallback`, `column_meta`, plus per-source cleaning rules: `min_year`, `year`, `default_slice`. The coordinator reads it to choose datasets.
+`backend/data/manifest.yaml` catalogs every dataset with **metadata only**: `id`, `source`, `title`, `topic`, `mode` (`file` | `api`), `file_path`, `format`, `sheet_name`, `resource_id`, `api_fallback`, `group` (files that form one view), `year` (for files with no year column). The coordinator reads it to choose datasets.
 
-**Source mode is a property of the dataset, not a per-query switch.** `api` mode is only used for pre-vetted data.gov.sg `resource_id`s (fetch and paginate known tables; no free-text dataset search).
+Older entries still carry per-dataset rules (`column_meta`, `default_slice`) read by the pandas analytics path; they go away when the SQL planner replaces it. New datasets need none of them.
+
+**Source mode is a property of the dataset, not a per-query switch.** `api` mode is only for pre-vetted data.gov.sg `resource_id`s.
 
 ### 5.3 Loading and cleaning
 
-- **Parsers:** `csv_parser.py` (pandas); `excel_parser.py` (openpyxl, built for the MOM F2 sheet layout: fixed header row, forward-filled `sex`, blank-row footer); `api_client.py` (data.gov.sg Datastore Search, pagination, 2 attempts with timeout).
+- **Parsers:** `csv_parser.py` (pandas; digit strings with a leading zero stay text, e.g. postal codes); `excel_parser.py` (openpyxl, built for the MOM F2 layout); `api_client.py` (data.gov.sg Datastore Search, pagination, 2 attempts with timeout).
 - **Missing values:** `-`, `na`, `N.A.` and similar become missing, never 0.
-- **Shared cleaning** (`app/data/cleaning.py`, used by both seeding and query-time loading; lands with PR `fix/double-counted-aggregates`):
-  - `min_year` cut-off.
-  - `year` taken from the manifest for files that have no year column.
-  - `default_slice`: several sources mix totals, parent categories and their sub-categories, or two classification schemes, in one column (e.g. `manufacturing` alongside its sub-industry `electronic products`), so summing every row double-counts. When a query doesn't filter on such a column, only a non-overlapping set of rows is used.
+- **Shared cleaning** (`app/data/cleaning.py`): adds `year` from the manifest where a file has none; still applies the legacy `min_year` / `default_slice` rules for the pandas analytics path.
 
-### 5.4 Seeding
+### 5.4 Seeding and typed views
 
-On startup, the backend's lifespan hook runs Alembic migrations, then `scripts/seed_datasets.py`. For each dataset with a local file, the seed step parses it and stores one `datasets` row: metadata, file path, content hash and a quality summary (row count, column count, nulls per column). Re-seeding is skipped when the file's content hash is unchanged.
+On startup the backend runs Alembic migrations, then `scripts/seed_datasets.py`:
 
-**Dataset rows are stored in Postgres for the planned SQL-based querying (section 3.2).** The seed step writes every cleaned row into one generic table, `dataset_records`, as a JSON document, then rebuilds **typed views** in a `data` schema from each dataset's profile: real `integer` / `double precision` / `text` columns, one view per dataset. Datasets sharing a manifest `group` (the three MOM yearly files) become one view. This keeps a single Alembic-managed table instead of one table per CSV; the views are derived and can be rebuilt at any time without losing data.
+1. **Prune:** datasets no longer in the manifest lose their stored rows; their catalog row is deleted unless a past analysis cites it.
+2. **Seed:** each file is parsed, profiled (section 5.5) and written to `dataset_records` (one JSONB document per row), with a `datasets` catalog row. Skipped when the file hash and `PROFILER_VERSION` are unchanged.
+3. **Views:** the `data` schema is dropped and rebuilt: one typed view per dataset (real `integer` / `double precision` / `text` columns), files sharing a `group` combined with `UNION ALL`, plus a `<view>_totals` view (additive measures summed per period) where there is something to sum.
 
-Today the query path still reads the files; the SQL planner will query the views instead. Reading through a JSON view is 2-7x slower than a typed table (about 1 ms at current sizes); materialized views close the gap if datasets grow past ~100k rows.
+Views are derived, so rebuilding them loses nothing. One generic table avoids a table per CSV. Reading through a JSON view is 2-7x slower than a typed table (about 1 ms at current sizes); materialized views close the gap past ~100k rows.
 
-**Known issue:** the stored file path is absolute and isn't rewritten when only the environment changes (Docker vs. host), because the hash check skips re-seeding.
+Today the query path still reads the files; the SQL planner will query the views.
 
-### 5.5 Data quality
+**Known issue:** the stored file path is absolute and isn't rewritten when only the environment changes (Docker vs. host).
 
-- **Built:** missing-value handling, cleaning rules (5.3), null and row counts per dataset.
-- **Planned:** a schema profiler at ingest (column roles; whether a measure can be summed; total rows; hierarchies; distinct values) feeding both the planner (3.2) and a data-quality panel in the UI.
+### 5.5 Data quality and structure inference
+
+The profiler records per column: role (time / dimension / measure), range, nulls, distinct values. `app/data/structure.py` then infers, **from the numbers only**:
+
+- **Hierarchy:** a value equal to the sum of other values in every cell (within 3 rounding units, at least 5 cells) is their parent. Views keep the lowest level and add `<column>_level_N` parent columns, so any level is a `GROUP BY`.
+- **Grand totals and overlaps:** a parent that is at least every other value everywhere is a grand total and is excluded; values outside its breakdown overlap it (MOM `More Than 48 Hours`).
+- **Parallel classification schemes:** two separate groups of values with equal sums; the one covering fewer cells is dropped.
+- **Classification eras:** a new era starts when a column's values change; an era whose relations don't form a clean tree (a value with two parents, cycles) is marked unverified and left out of the views.
+- **Additivity:** a measure is additive only if some column proves it; rates, means and medians default to non-additive, the safe side for `SUM`.
+
+Validated on the earlier industry datasets (full 3-level industry tree recovered; pre-2006 eras rejected) and on MOM (views sum to the published totals within rounding). **Not yet handled:** totals stored as separate columns (e.g. `retrench_total` beside its parts); a data-quality panel in the UI.
 
 ## 6. Database
 
@@ -181,8 +191,8 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 | Table | Purpose | In use? |
 |---|---|---|
-| `datasets` | Catalog row per dataset: source, mode, file path, content hash, `quality_report` and `schema_profile` (JSON) | Yes |
-| `dataset_records` | Every cleaned source row as a JSONB document; read through the generated views in the `data` schema | Written by seeding; queried from the planned SQL planner |
+| `datasets` | Catalog row per dataset: source, mode, file path, content hash, `quality_report` (incl. profiler version) and `schema_profile` (JSON, incl. inferred structure) | Yes |
+| `dataset_records` | Every cleaned source row as a JSONB document; read through the generated views in the `data` schema | Written by seeding; to be queried by the SQL planner |
 | `analysis_runs` | One per query: text, status, provider, report | Yes; `session_id`, `query_hash`, `chart_specs`, `token_usage`, `estimated_cost_usd` columns reserved for planned features |
 | `analysis_run_datasets` | Which datasets a run used | Yes |
 | `agent_traces` | Persisted trace events | Yes |
@@ -218,7 +228,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 - pandas and openpyxl run on the async event loop, so one run's computation stalls the others -> move to a thread.
 - One database session is held for the whole run, including LLM calls -> use short-lived sessions.
-- The live vacancy API is fetched in full on every query, for data that changes yearly -> cache it.
+- Live API datasets are fetched in full on every query -> cache them (no dataset uses the API right now).
 - The run row is written only at the end -> create it at submit time with status `running`.
 - Load tests will mostly hit LLM rate limits -> also test with a mocked LLM.
 
@@ -260,6 +270,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 | Real-time transport | SSE | The trace only flows server -> client; plain HTTP with built-in browser reconnect. The brief mentions WebSocket; SSE serves the same purpose |
 | Database | PostgreSQL only | Unit tests mock the database; integration tests use real Postgres, so a second engine adds nothing |
 | Dataset rows | One generic JSONB table + typed views generated per dataset | SQL generation needs real columns; one fixed table avoids per-CSV table maintenance; views are rebuildable |
+| Data rules (totals, hierarchies, additivity) | Inferred from the numbers at ingest, not declared per dataset | New files work without code or manifest rules; inference needs a tolerance, minimum evidence and a clean tree, and uncertain eras are excluded rather than guessed |
 | Source mode | Per dataset, in the manifest | Reliability differs by dataset, not by question; live API only for pre-vetted tables, with file fallback |
 | LLM providers | OpenAI + AWS Bedrock | Bedrock is a real cloud platform, a literal answer to "multi-cloud" |
 | Provider switching vs. fallback | Both, separately | The brief asks for both |
