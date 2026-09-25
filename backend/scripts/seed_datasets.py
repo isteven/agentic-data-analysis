@@ -91,8 +91,8 @@ async def seed_dataset(session, entry: dict) -> None:
         return
 
     quality_report = {
-        "row_count": int(len(df)),
-        "column_count": int(len(df.columns)),
+        "row_count": len(df),
+        "column_count": len(df.columns),
         "null_counts": {col: int(df[col].isna().sum()) for col in df.columns},
         "profiler_version": PROFILER_VERSION,
         "manifest_hash": entry_hash,
