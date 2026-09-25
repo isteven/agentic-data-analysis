@@ -189,14 +189,55 @@ def _has_totals_view(profile: list[dict]) -> bool:
     return has_time and any(c["role"] == "measure" and c.get("additive") for c in profile)
 
 
+def merge_profiles(profiles: list[list[dict]]) -> list[dict]:
+    """Columns of a view built from several files (e.g. one per year): ranges widened and
+    values unioned across members. Using only the first file's profile told the planner
+    the MOM view covered 2023 alone when it holds 2023-2025."""
+    merged = [dict(c) for c in profiles[0]]
+    by_column = {c["column"]: c for c in merged}
+    for profile in profiles[1:]:
+        for c in profile:
+            m = by_column.get(c["column"])
+            if m is None:
+                continue
+            for key, pick in (("min", min), ("max", max)):
+                if c.get(key) is not None:
+                    m[key] = c[key] if m.get(key) is None else pick(m[key], c[key])
+            for key in ("values", "sample_values"):
+                if c.get(key):
+                    m[key] = list(dict.fromkeys([*(m.get(key) or []), *c[key]]))
+            if m.get("values"):
+                m["distinct"] = len(m["values"])
+            elif c.get("distinct") is not None:
+                # values not stored (high cardinality): the union is at least the larger
+                m["distinct"] = max(m.get("distinct") or 0, c["distinct"])
+    return merged
+
+
+def _drop_hidden_values(columns: list[dict], structure: dict[str, dict]) -> None:
+    """Hide values the view filters out (grand totals, overlapping buckets, hierarchy
+    parents), so the planner isn't offered a filter value that matches no rows."""
+    for c in columns:
+        s = structure.get(c["column"])
+        if s is None:
+            continue
+        hidden = set(s["exclude_values"]) | set(s["parents"].values())
+        for key in ("values", "sample_values"):
+            if c.get(key):
+                c[key] = [v for v in c[key] if v not in hidden]
+        if c.get("values"):
+            c["distinct"] = len(c["values"])
+
+
 def view_catalog(plans: dict[str, list[tuple[str, list[dict]]]]) -> dict[str, list[dict]]:
     """Every generated view and the columns it exposes (role, additivity, values) -
     what the SQL gate checks queries against and what the planner is shown."""
     catalog: dict[str, list[dict]] = {}
     for view_name, members in plans.items():
-        profile = members[0][1]
+        profile = merge_profiles([p for _, p in members])
         structure = merge_structure([p for _, p in members])
         columns = [dict(c) for c in profile]
+        _drop_hidden_values(columns, structure)
         for column, s in structure.items():
             columns += [
                 {"column": f"{column}_level_{level}", "role": "dimension", "level_of": column}
