@@ -83,9 +83,15 @@ export function ChatMessage({ turn }: { turn: ChatTurn }) {
         </div>
         <div className="min-w-0 flex-1">
           {turn.pending && (
-            <p className="animate-pulse pt-1 text-sm text-zinc-500">
-              Agents are analysing the data…
-            </p>
+            <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+              <p className="mb-2 flex items-center gap-2 text-sm text-zinc-500">
+                <span className="h-2 w-2 animate-ping rounded-full bg-blue-500" />
+                {turn.liveSteps.length === 0
+                  ? "Starting the agents…"
+                  : `Agents working… (${turn.liveSteps.length} step${turn.liveSteps.length === 1 ? "" : "s"})`}
+              </p>
+              <AgentTrace steps={turn.liveSteps} live />
+            </div>
           )}
           {turn.error && (
             <p className="pt-1 text-sm text-red-600 dark:text-red-400">{turn.error}</p>

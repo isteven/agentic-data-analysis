@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import type { TraceStep } from "@/lib/types";
 
 const STEP_TYPE_STYLES: Record<string, string> = {
@@ -13,15 +16,28 @@ function stepBadgeClass(stepType: string): string {
   );
 }
 
-export function AgentTrace({ steps }: { steps: TraceStep[] }) {
+/** `live`: steps are still arriving - keep the newest in view and mark it as current. */
+export function AgentTrace({ steps, live = false }: { steps: TraceStep[]; live?: boolean }) {
+  const listRef = useRef<HTMLOListElement>(null);
+
+  useEffect(() => {
+    if (live && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [live, steps.length]);
+
   if (steps.length === 0) {
     return null;
   }
 
   return (
-    <ol className="max-h-[32rem] divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800">
+    <ol
+      ref={listRef}
+      className={`divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800 ${live ? "max-h-72" : "max-h-[32rem]"}`}
+    >
       {steps.map((step, i) => (
-        <li key={i} className="py-3 first:pt-0">
+        <li
+          key={i}
+          className={`py-3 first:pt-0 ${live && i === steps.length - 1 ? "animate-pulse" : ""}`}
+        >
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
               {step.node_name}
