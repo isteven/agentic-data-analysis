@@ -61,6 +61,17 @@ class run_sql(BaseModel):
     sql: str
 
 
+class ChartSuggestion(BaseModel):
+    """How to show the final result; columns must be columns of the result."""
+
+    type: str = Field(description="'line' (trend over time), 'bar' (compare categories) or 'none'")
+    x: str | None = Field(default=None, description="Result column for the x axis")
+    y: list[str] = Field(default_factory=list, description="Numeric result column(s) to plot")
+    group: str | None = Field(
+        default=None, description="Optional result column splitting rows into one series each"
+    )
+
+
 class submit_answer(BaseModel):
     """Commit the final query. Its result is the only source of numbers for the report,
     so it must return everything the answer needs, already aggregated."""
@@ -69,6 +80,7 @@ class submit_answer(BaseModel):
     interpretation: str = Field(
         description="One sentence: how the question was understood and what the query computes"
     )
+    chart: ChartSuggestion | None = Field(default=None, description="How to chart the result")
 
 
 class cannot_answer(BaseModel):
@@ -94,7 +106,11 @@ Rules:
   Where a column has a hierarchy, <column>_level_1 is the top level; GROUP BY it for totals by group.
 - Filter values must match the listed values exactly (check with describe_view or run_sql).
 - Growth rates: use LN / EXP, or (last / first - 1). Medians: percentile_cont(0.5) WITHIN GROUP (ORDER BY x).
-- If a query is rejected, read the message and fix the query."""
+- If a query is rejected, read the message and fix the query.
+- In submit_answer, suggest a chart: 'line' for trends over time, 'bar' to compare
+  categories, 'none' when a table reads better (e.g. a short ranked list). Chart one
+  kind of measure at a time (counts or rates, not both), and include every series the
+  question compares."""
 
 
 @dataclass
@@ -103,6 +119,7 @@ class PlannerResult:
     interpretation: str | None = None
     result: QueryResult | None = None
     reason: str | None = None
+    chart_suggestion: dict | None = None
     steps: int = 0
     queries_rejected: int = 0
     tool_log: list[dict] = field(default_factory=list)
@@ -228,6 +245,7 @@ async def run_planner(
                 trace("observation", f"Final result: {len(result.rows)} row(s)")
                 outcome.status = "answered"
                 outcome.interpretation = args.get("interpretation")
+                outcome.chart_suggestion = args.get("chart")
                 outcome.result = result
                 return outcome
 
