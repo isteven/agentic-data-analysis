@@ -7,6 +7,7 @@ from app.data.views import (
     build_typed_view_sql,
     merge_structure,
     plan_views,
+    view_catalog,
     view_name_for,
 )
 
@@ -264,3 +265,27 @@ def test_totals_view_requires_a_time_column():
 
     with pytest.raises(ValueError, match="time"):
         build_totals_view_sql("t", "retrenchment_by_industry", profile)
+
+
+def test_catalog_describes_every_member_file_not_just_the_first():
+    def mom_file(year, sexes):
+        return [
+            {"column": "year", "role": "time", "min": year, "max": year},
+            {
+                "column": "sex",
+                "role": "dimension",
+                "values": sexes,
+                "distinct": len(sexes),
+                "exclude_values": ["Total"],
+            },
+            {"column": "value", "role": "measure", "additive": True, "min": 0.1, "max": 9.0},
+        ]
+
+    catalog = view_catalog(
+        {"mom": [(DATASET_A, mom_file(2023, ["Female", "Total"])), (DATASET_B, mom_file(2025, ["Male", "Total"]))]}
+    )
+    year, sex, _ = catalog["mom"]
+
+    assert (year["min"], year["max"]) == (2023, 2025)
+    assert sex["values"] == ["Female", "Male"]  # union, minus the excluded grand total
+    assert sex["distinct"] == 2
