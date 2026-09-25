@@ -29,7 +29,7 @@ datasets:
       year: {type: int}
       university: {type: category}
       school: {type: category}
-      degree: {type: category, description: "Footnote markers (**, #) stripped on ingest"}
+      degree: {type: category, description: "May carry footnote markers (**, #); not yet stripped"}
       employment_rate_overall: {type: numeric, unit: percent, additive: false}
       employment_rate_ft_perm: {type: numeric, unit: percent, additive: false}
       basic_monthly_mean: {type: numeric, unit: sgd, additive: false}
