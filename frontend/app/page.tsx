@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { AgentTrace } from "@/components/AgentTrace";
+import { ResultChart } from "@/components/ResultChart";
+import { ResultTable } from "@/components/ResultTable";
 import type { QueryResponse } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -38,12 +40,12 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      <main className="mx-auto max-w-2xl px-6 py-16">
+      <main className="mx-auto max-w-3xl px-6 py-16">
         <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">
           Agentic Policy Data Analytics Platform
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          Ask a question about employment, retrenchment, or job vacancy data.
+          Ask a question about retrenchment, working hours, graduate employment, or travel to junior colleges.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8 flex gap-2">
@@ -51,7 +53,7 @@ export default function Home() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="e.g. What were retrenchment trends in manufacturing?"
+            placeholder="e.g. How did retrenchment of residents and non-residents change since 2015?"
             className="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             required
           />
@@ -73,6 +75,12 @@ export default function Home() {
             <pre className="mt-6 whitespace-pre-wrap rounded border border-zinc-200 bg-white p-4 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
               {result.report_markdown ?? JSON.stringify(result, null, 2)}
             </pre>
+            {result.analysis && (
+              <>
+                <ResultChart analysis={result.analysis} />
+                <ResultTable analysis={result.analysis} />
+              </>
+            )}
             <AgentTrace steps={result.trace} />
           </>
         )}
