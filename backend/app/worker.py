@@ -53,6 +53,18 @@ async def run_query_task(
         try:
             final_state = await graph.ainvoke(state)
             final_state["status"] = "completed" if not final_state.get("errors") else "partial"
+        except asyncio.CancelledError:
+            # SAQ cancels the task itself on a job timeout - a plain `except Exception`
+            # never sees this (CancelledError is a BaseException since 3.8). Without this
+            # branch the run is orphaned at status "running" forever: the DB row is
+            # never updated and the trace stream never gets a "done", so a poller or SSE
+            # client waits indefinitely - this is the "stall after a few queries" bug.
+            logger.warning("[DEBUG] run_query_task cancelled (job timeout) run_id=%s", run_id)
+            final_state = state
+            final_state["errors"].append(
+                {"node_name": "graph", "message": "Timed out before finishing."}
+            )
+            final_state["status"] = "failed"
         except Exception as exc:  # unrecoverable graph failure: degrade gracefully
             logger.exception("[DEBUG] graph failed run_id=%s", run_id)
             final_state = state
@@ -79,4 +91,8 @@ settings_dict = {
     "functions": [run_query_task],
     "startup": startup,
     "concurrency": 4,
+    # Default 1s isn't enough for run_query_task's CancelledError handler to persist_run
+    # (a DB write) after a job-timeout cancellation; give it real room to finish cleanly
+    # rather than being force-killed mid-write and leaving the run stuck at "running".
+    "cancellation_hard_deadline_s": 15,
 }
