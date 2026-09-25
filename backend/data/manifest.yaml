@@ -1,47 +1,21 @@
 datasets:
-  - id: retrenchment_by_industry
+  - id: retrenchment_by_residential_status
     source: data_gov_sg
     mode: file
-    title: "Number of Retrenched Employees by Industry and Occupational Group"
-    resource_id: d_6d1fcbd205b908c27c174db08432346a
-    file_path: incoming/data_gov_sg/NumberofRetrenchedEmployeesbyIndustryandOccupationAnnual.csv
+    title: "Number and Incidence of Retrenchment by Residential Status, Annual"
+    resource_id: null
+    file_path: incoming/data_gov_sg/NumberandIncidenceofRetrenchmentbyResidentialStatusAnnual.csv
     format: csv
-    topic: [employment, retrenchment, industry, occupation]
-    column_meta:
-      year: {type: int, description: "Calendar year"}
-      industry: {type: category, description: "Industry classification"}
-      occupation: {type: category, description: "Occupational group"}
-      retrench: {type: numeric, unit: persons, additive: true, description: "Number of retrenched employees; '-' means suppressed/negligible, not zero"}
-    min_year: 2006  # classification changed pre-2006; only stable years loaded
-    # Rows to aggregate over when a query doesn't filter on that column. `industry`
-    # mixes top-level sectors with their sub-industries (e.g. manufacturing +
-    # electronic products); summing every row double-counts. Top-level sectors only.
-    default_slice:
-      industry: [manufacturing, construction, services, services producing industries, others]
+    topic: [employment, retrenchment, residential status, retrenchment incidence]
 
-  - id: job_vacancy_by_industry
+  - id: mrt_to_junior_college_travel
     source: data_gov_sg
-    mode: api
-    title: "Number of Job Vacancy by Industry and Occupation - Annual"
-    resource_id: d_889d11a2b0a53b235abb64e3f4e0a47b
-    api_fallback: file
-    file_path: incoming/data_gov_sg/NumberofJobVacancybyIndustryandOccupationAnnual.csv
+    mode: file
+    title: "Travelling Distance between MRT/LRT Station to Junior Colleges / Millennia Institute"
+    resource_id: null
+    file_path: incoming/data_gov_sg/TravellingDistancebetweenMRTLRTStationtoJuniorCollegesMillenniaInstitute.csv
     format: csv
-    topic: [employment, job vacancy, industry, occupation]
-    column_meta:
-      year: {type: int, description: "Calendar year"}
-      industry: {type: category, description: "Industry classification"}
-      occupation: {type: category, description: "Occupational group"}
-      job_vacancy: {type: numeric, unit: positions, additive: true, description: "Number of job vacancies; '-' means suppressed/negligible, not zero"}
-    # Same industry hierarchy as retrenchment. `occupation` also carries two
-    # classification schemes side by side from 2013 (3-group and PME/non-PME) - use
-    # the 3-group scheme, which covers every year.
-    default_slice:
-      industry: [manufacturing, construction, services, services producing industries, others]
-      occupation:
-        - professionals, managers, executives and technicians
-        - clerical, sales and services workers
-        - production and transport operators, cleaners and labourers
+    topic: [transport, education, junior college, travel time, travel distance, mrt, lrt]
 
   - id: graduate_employment_survey
     source: data_gov_sg
