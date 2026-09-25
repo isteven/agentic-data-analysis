@@ -19,11 +19,11 @@ export function AgentTrace({ steps }: { steps: TraceStep[] }) {
   }
 
   return (
-    <div className="mt-6 rounded border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold text-black dark:border-zinc-800 dark:text-zinc-50">
-        Agent reasoning
-      </h2>
-      <ol className="divide-y divide-zinc-100 dark:divide-zinc-800">
+    <details className="mt-4 rounded border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        Agent steps ({steps.length})
+      </summary>
+      <ol className="divide-y divide-zinc-100 border-t border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
         {steps.map((step, i) => (
           <li key={i} className="px-4 py-3">
             <div className="flex items-center gap-2">
@@ -40,6 +40,6 @@ export function AgentTrace({ steps }: { steps: TraceStep[] }) {
           </li>
         ))}
       </ol>
-    </div>
+    </details>
   );
 }
