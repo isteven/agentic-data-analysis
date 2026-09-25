@@ -38,14 +38,17 @@ function ResultTabs({ result }: { result: QueryResponse }) {
 
   return (
     <div>
-      <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
+      <div
+        role="tablist"
+        className="flex h-10 items-stretch gap-1 overflow-x-auto overflow-y-hidden border-b border-zinc-200 dark:border-zinc-800"
+      >
         {tabs.map((tab) => (
           <button
             key={tab.id}
             role="tab"
             aria-selected={active === tab.id}
             onClick={() => setActive(tab.id)}
-            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`-mb-px flex shrink-0 items-center whitespace-nowrap border-b-2 px-3 text-sm font-medium leading-none ${
               active === tab.id
                 ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
                 : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
