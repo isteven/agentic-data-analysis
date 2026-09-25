@@ -106,6 +106,12 @@ Rules:
   Where a column has a hierarchy, <column>_level_1 is the top level; GROUP BY it for totals by group.
 - Filter values must match the listed values exactly (check with describe_view or run_sql).
 - Growth rates: use LN / EXP, or (last / first - 1). Medians: percentile_cont(0.5) WITHIN GROUP (ORDER BY x).
+- Shares and ratios ("share of X", "% of Y that ..."): compute the numerator and the denominator
+  in ONE query over the same rows, with conditional aggregates, grouped by period, e.g.
+  100.0 * SUM(m) FILTER (WHERE <dimension> = '<value>') / SUM(m). Apply the population filter
+  (the group the share is of) in WHERE so it limits both parts. A <view>_totals view has only
+  the time column and summed measures, no dimensions, so it can't be filtered by category.
+- Never type a number from an earlier result into a query; the database computes every number.
 - If a query is rejected, read the message and fix the query.
 - In submit_answer, suggest a chart: 'line' for trends over time, 'bar' to compare
   categories, 'none' when a table reads better (e.g. a short ranked list). Chart one
