@@ -12,6 +12,7 @@ venv/
 *.egg-info/
 .pytest_cache/
 .coverage
+llm-eval-results.json
 htmlcov/
 .ruff_cache/
 
