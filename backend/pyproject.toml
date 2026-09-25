@@ -24,6 +24,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "anyio>=4.0",
+    "sqlglot>=30.19.0",
 ]
 
 [project.optional-dependencies]
