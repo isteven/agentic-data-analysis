@@ -15,8 +15,10 @@ from app.data.profiler import PROFILER_VERSION, profile_dataframe
 from app.data.records import to_records
 from app.data.views import rebuild_views
 from app.db.session import AsyncSessionLocal
+from app.models.analysis_run import AnalysisRunDataset
 from app.models.dataset import Dataset
 from app.models.dataset_record import DatasetRecord
+from app.models.finding import Finding
 
 
 def content_hash(path: Path) -> str:
@@ -131,9 +133,32 @@ async def _replace_records(session, dataset_id, df) -> None:
         await session.execute(insert(DatasetRecord), rows)
 
 
+async def prune_removed_datasets(session, manifest: list[dict]) -> None:
+    """Datasets dropped from the manifest lose their stored rows. Their catalog row is
+    deleted too unless a past analysis cites it - then it stays, so that history still
+    resolves. Nothing on the query path reads catalog rows outside the manifest."""
+    keep = {entry["id"] for entry in manifest}
+    removed = (await session.scalars(select(Dataset).where(Dataset.dataset_key.not_in(keep)))).all()
+    for dataset in removed:
+        await session.execute(delete(DatasetRecord).where(DatasetRecord.dataset_id == dataset.id))
+        cited = await session.scalar(
+            select(
+                exists().where(AnalysisRunDataset.dataset_id == dataset.id)
+                | exists().where(Finding.dataset_id == dataset.id)
+            )
+        )
+        if cited:
+            print(f"pruned rows of {dataset.dataset_key}: not in manifest, kept for past runs")
+        else:
+            await session.delete(dataset)
+            print(f"pruned {dataset.dataset_key}: not in manifest")
+    await session.commit()
+
+
 async def main() -> None:
     manifest = load_manifest()
     async with AsyncSessionLocal() as session:
+        await prune_removed_datasets(session, manifest)
         for entry in manifest:
             await seed_dataset(session, entry)
         # Views are derived, so rebuilding them every run keeps them in step with the
