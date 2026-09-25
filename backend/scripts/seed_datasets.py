@@ -11,7 +11,7 @@ from app.data.cleaning import clean_dataset
 from app.data.manifest import DATA_ROOT, load_manifest
 from app.data.parsers.csv_parser import read_csv
 from app.data.parsers.excel_parser import read_mom_hours_sheet
-from app.data.profiler import profile_dataframe
+from app.data.profiler import PROFILER_VERSION, profile_dataframe
 from app.data.records import to_records
 from app.data.views import rebuild_views
 from app.db.session import AsyncSessionLocal
@@ -31,7 +31,9 @@ def build_dataframe(entry: dict):
     elif entry["format"] == "xlsx":
         df = read_mom_hours_sheet(str(path), entry["sheet_name"])
     else:
-        raise NotImplementedError(f"Format '{entry['format']}' not yet handled (dataset: {entry['id']})")
+        raise NotImplementedError(
+            f"Format '{entry['format']}' not yet handled (dataset: {entry['id']})"
+        )
 
     before = len(df)
     df = clean_dataset(df, entry)
@@ -60,14 +62,12 @@ async def seed_dataset(session, entry: dict) -> None:
 
     hash_ = content_hash(path)
 
-    existing = await session.scalar(
-        select(Dataset).where(Dataset.dataset_key == entry["id"])
-    )
-    # also re-seed datasets seeded before profiles / stored rows existed
+    existing = await session.scalar(select(Dataset).where(Dataset.dataset_key == entry["id"]))
+    # also re-seed datasets seeded before stored rows existed, or by an older profiler
     if (
         existing is not None
         and existing.content_hash == hash_
-        and existing.schema_profile
+        and (existing.quality_report or {}).get("profiler_version") == PROFILER_VERSION
         and await _has_records(session, existing.id)
     ):
         print(f"skip {entry['id']}: already seeded, content unchanged")
@@ -83,6 +83,7 @@ async def seed_dataset(session, entry: dict) -> None:
         "row_count": int(len(df)),
         "column_count": int(len(df.columns)),
         "null_counts": {col: int(df[col].isna().sum()) for col in df.columns},
+        "profiler_version": PROFILER_VERSION,
     }
     schema_profile = profile_dataframe(df, entry)
 
@@ -109,14 +110,14 @@ async def seed_dataset(session, entry: dict) -> None:
     await session.flush()  # assigns existing.id for a new dataset
     await _replace_records(session, existing.id, df)
     await session.commit()
-    print(f"seeded {entry['id']}: {quality_report['row_count']} rows, {quality_report['column_count']} columns")
+    print(
+        f"seeded {entry['id']}: {quality_report['row_count']} rows, {quality_report['column_count']} columns"
+    )
 
 
 async def _has_records(session, dataset_id) -> bool:
     return bool(
-        await session.scalar(
-            select(exists().where(DatasetRecord.dataset_id == dataset_id))
-        )
+        await session.scalar(select(exists().where(DatasetRecord.dataset_id == dataset_id)))
     )
 
 
