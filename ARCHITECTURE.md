@@ -43,7 +43,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 6 nodes; ReAct SQL planner with gate-checked retries; reviewer loop back to planner / report writer | Partial |
 | Async / queue | SAQ worker on Redis | `run_query_task` built, publishes trace events, and runs every query (`POST /api/queries` enqueues it); `worker` service in Compose | Built |
 | Real-time trace | Redis -> SSE | Worker writes each event to a Redis Stream as emitted; `GET /api/agent-trace/{run_id}` serves it as SSE; frontend not wired yet | Partial |
-| LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI + Bedrock via one factory; per-request provider and automatic fallback (traced); no UI picker yet | Partial |
+| LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI + Bedrock (Claude via `global.` inference profiles) via one factory; UI picker; automatic per-call fallback, traced. Verified live both ways (Bedrock only; OpenAI key broken -> Bedrock) | Built |
 | Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
 | Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
 | Visualisations | Charts driven by backend chart specs | Planner proposes a chart spec, checked against the result columns (`app/agents/chart.py`); Recharts chart + data table | Built |
@@ -125,7 +125,9 @@ All agent code gets a model from `get_chat_model(provider, model_tier)` in `back
 - **Built -- per-request choice:** `POST /api/queries` takes an optional `provider`; otherwise `LLM_DEFAULT_PROVIDER`. Nodes get their model via `node_model(state, node, tier)` (`app/agents/llm.py`).
 - **Built -- automatic fallback:** `get_chat_model()` returns a `FallbackChatModel` holding the chosen provider, then `LLM_FALLBACK_PROVIDER`. Any error on a call (auth, outage, rate limit after the SDK's own retries, malformed structured output) retries that call on the next provider. The switch is a trace event ("LLM provider openai failed (AuthenticationError); retried on bedrock") and is stored in `analysis_runs.provider_used` (e.g. `openai->bedrock`). A provider that isn't configured is skipped, so either one alone still works.
 - **Why not LangChain `.with_fallbacks()`:** it doesn't report which provider answered, so the switch couldn't be traced. The wrapper mirrors `bind_tools` / `with_structured_output` / `ainvoke`, so node code is unchanged.
-- **Planned:** a provider picker in the chat UI.
+- **Built:** a provider picker in the chat box.
+- **Planned:** skip a provider for the rest of a run after an auth/access error, instead of retrying it on every call.
+- **Setup note:** each Anthropic model needs a one-time AWS Marketplace subscription per account (done from the Bedrock Playground by an admin); the app's IAM user only needs `bedrock:InvokeModel`.
 
 ## 5. Data layer
 
