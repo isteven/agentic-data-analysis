@@ -33,3 +33,12 @@ export interface Analysis {
   reason: string | null;
   chart: ChartSpec | null;
 }
+
+/** One question and its answer in the chat; pending until the backend responds. */
+export interface ChatTurn {
+  id: string;
+  query: string;
+  pending: boolean;
+  result?: QueryResponse;
+  error?: string;
+}

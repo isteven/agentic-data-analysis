@@ -51,12 +51,18 @@ function toPoints(analysis: Analysis): { points: Point[]; series: string[] } {
 const formatNumber = (value: unknown) =>
   typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value);
 
+/** Whether the result has a chart to draw, so callers can hide an empty chart tab. */
+export function hasChart(analysis: Analysis | null): boolean {
+  const chart = analysis?.chart;
+  if (!analysis || !chart || chart.type === "none" || !chart.x) return false;
+  return toPoints(analysis).points.length > 0;
+}
+
 export function ResultChart({ analysis }: { analysis: Analysis }) {
   const chart = analysis.chart;
-  if (!chart || chart.type === "none" || !chart.x) return null;
+  if (!chart || !hasChart(analysis) || !chart.x) return null;
 
   const { points, series } = toPoints(analysis);
-  if (points.length === 0) return null;
 
   const common = (
     <>
@@ -69,7 +75,7 @@ export function ResultChart({ analysis }: { analysis: Analysis }) {
   );
 
   return (
-    <figure className="mt-6 rounded border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <figure>
       <div className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           {chart.type === "bar" ? (

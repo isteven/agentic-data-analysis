@@ -12,12 +12,11 @@ export function ResultTable({ analysis }: { analysis: Analysis }) {
   if (analysis.columns.length === 0) return null;
 
   return (
-    <details className="mt-4 rounded border border-zinc-200 bg-white text-sm dark:border-zinc-800 dark:bg-zinc-900" open>
-      <summary className="cursor-pointer px-4 py-2 font-medium text-zinc-700 dark:text-zinc-300">
-        Data ({analysis.rows.length} row{analysis.rows.length === 1 ? "" : "s"}
-        {analysis.truncated ? ", truncated" : ""})
-      </summary>
-      <div className="max-h-80 overflow-auto px-4 pb-4">
+    <div className="text-sm">
+      {analysis.truncated && (
+        <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">Result truncated at {analysis.rows.length} rows.</p>
+      )}
+      <div className="max-h-96 overflow-auto">
         <table className="w-full border-collapse text-left">
           <thead>
             <tr>
@@ -47,6 +46,6 @@ export function ResultTable({ analysis }: { analysis: Analysis }) {
           <pre className="mt-3 whitespace-pre-wrap text-xs text-zinc-500 dark:text-zinc-400">{analysis.sql}</pre>
         )}
       </div>
-    </details>
+    </div>
   );
 }
