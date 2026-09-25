@@ -1,6 +1,6 @@
 # Architecture -- Agentic Policy Data Analytics Platform
 
-> **Living document.** Every section states what is **built** today and what is **planned**. Status as of 2026-09-25: milestone M1 complete, M2 in progress.
+> **Living document.** Every section states what is **built** today and what is **planned**. Status as of 2026-09-25: milestone M1 complete, M2 in progress. Async worker wired (queries run out-of-request, poll-based); SSE streaming not yet built.
 
 ## 1. Overview
 
@@ -30,7 +30,7 @@ Worker also calls: LLM providers (via one provider factory),
 data.gov.sg Datastore API (client built, no dataset uses it now), local dataset files (backend/data/incoming/).
 ```
 
-**Today:** the backend runs the whole pipeline synchronously inside `POST /api/queries` and returns the full report and trace in one response. The worker task exists but nothing enqueues it yet, and there is no SSE route.
+**Today:** `POST /api/queries` creates the run (status `running`) and enqueues it on the SAQ worker, returning `202` immediately; `GET /api/queries/{run_id}` polls for the result. The worker runs the pipeline and publishes trace events to Redis as it goes, but nothing relays that channel to the browser yet -- the frontend polls, it doesn't stream.
 
 **Why this shape:** the API process only does fast work (accept a query, serve history, relay the trace stream); the slow work (several LLM calls, data loading) runs in a separate worker, so the API stays responsive and the trace can stream across processes.
 
@@ -39,9 +39,9 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | Layer | Target | Built today | Status |
 |---|---|---|---|
 | Frontend | Next.js + TypeScript, Recharts, TanStack Query | Next.js + TypeScript: one query page with report, chart, data table and agent-trace panel | Partial |
-| Backend API | FastAPI: 202 + background run, SSE, history, export | FastAPI: synchronous `POST /api/queries`, health routes | Partial |
+| Backend API | FastAPI: 202 + background run, SSE, history, export | FastAPI: `POST /api/queries` (202 + worker run), `GET /api/queries/{run_id}` (poll), health routes | Partial |
 | Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 5 nodes; analytics is a ReAct SQL planner with gate-checked retries | Partial |
-| Async / queue | SAQ worker on Redis | `run_query_task` built and publishes trace events; not wired to any route | Partial |
+| Async / queue | SAQ worker on Redis | `run_query_task` built, publishes trace events, and runs every query (`POST /api/queries` enqueues it); `worker` service in Compose | Built |
 | Real-time trace | Redis pub/sub -> SSE | Trace returned once, after the run | Partial |
 | LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI + Bedrock via one factory; per-request provider and automatic fallback (traced); no UI picker yet | Partial |
 | Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
@@ -96,7 +96,8 @@ One `AgentState` (`backend/app/agents/state.py`), shared by all nodes: `query`, 
 Every node calls `emit_trace(state, node, step_type, content)` with `step_type` in `reasoning | action | observation`.
 
 - **Built:** trace events are persisted to `agent_traces` and returned with the response; the UI shows them grouped by node. The worker task runs the graph with `.astream()` and publishes each new event to Redis channel `agent-trace:{run_id}`.
-- **Planned:** `GET /api/agent-trace/{run_id}` relays that channel to the browser as SSE.
+- **Built:** `POST /api/queries` enqueues `run_query_task` and returns `202` + `run_id`; `GET /api/queries/{run_id}` polls `analysis_runs` + `agent_traces` for the result (this is the "fallback if the stream drops" path once SSE exists, and the only path today).
+- **Planned:** `GET /api/agent-trace/{run_id}` relays that Redis channel to the browser as SSE, so trace steps appear live instead of only once the run finishes.
 
 ### 3.5 Failure handling
 
@@ -192,12 +193,12 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 |---|---|---|
 | `POST /api/queries` | Built (synchronous) -> planned: returns `202` + `run_id` | Submit a question |
 | `GET /api/health`, `GET /api/health/providers` | Built | Liveness; which providers are configured |
-| `GET /api/queries/{run_id}` | Planned | Poll result (fallback if the stream drops) |
+| `GET /api/queries/{run_id}` | Built | Poll result (fallback if the stream drops, once SSE exists; only path today) |
 | `GET /api/agent-trace/{run_id}` | Planned | Live trace via SSE |
 | `GET /api/analyses`, `GET /api/analyses/{run_id}/export` | Planned | History; PDF / JSON / CSV export |
 | `GET /api/datasets` | Planned | Dataset catalog |
 
-**Async processing:** SAQ worker (`backend/app/worker.py`), same Docker image as the API with a different command; `scripts/queue_status.py` inspects the queue.
+**Async processing:** SAQ worker (`backend/app/worker.py`), same Docker image as the API with a different command (`worker` service in `infra/docker-compose.yml`); `scripts/queue_status.py` inspects the queue.
 
 ## 8. Frontend
 
@@ -211,12 +212,13 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 **Targets:** first trace event on screen within 2 s of submitting; a simple single-dataset query completes within 60 s.
 
-**Known risks** (to fix when the worker is wired):
+**Fixed now that the worker is wired:** the run row is created at submit time with status `running` (`create_run()`), so a poll or the history page can find it immediately.
 
-- pandas and openpyxl run on the async event loop, so one run's computation stalls the others -> move to a thread.
+**Still open:**
+
+- pandas and openpyxl run on the async event loop inside the worker, so one run's computation stalls the others in the same process (SAQ concurrency 4) -> move to a thread.
 - One database session is held for the whole run, including LLM calls -> use short-lived sessions.
 - Live API datasets are fetched in full on every query -> cache them (no dataset uses the API right now).
-- The run row is written only at the end -> create it at submit time with status `running`.
 - Load tests will mostly hit LLM rate limits -> also test with a mocked LLM.
 
 ### 9.2 Cost

@@ -44,6 +44,24 @@ services:
     volumes:
       - ../backend/data:/app/data
 
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: ["python", "-m", "saq", "app.worker.settings_dict"]
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://apda:apda@db:5432/apda
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../backend/data:/app/data
+
   frontend:
     build:
       context: ../frontend
