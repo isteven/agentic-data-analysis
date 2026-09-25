@@ -35,6 +35,8 @@ async def persist_run(
         provider_used="openai",
         status=final_state["status"],
         report_markdown=final_state.get("report_markdown"),
+        # the query result + chart spec: what the dashboard draws, kept for history
+        chart_specs=final_state.get("analysis"),
     )
     session.add(run)
     await session.flush()

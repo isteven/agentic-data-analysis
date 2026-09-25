@@ -43,6 +43,7 @@ class Analysis(TypedDict):
     rows: list[list]
     truncated: bool
     reason: str | None
+    chart: dict | None  # app/agents/chart.py spec
 
 
 class AgentState(TypedDict):

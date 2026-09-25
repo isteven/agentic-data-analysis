@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
-from app.schemas.query import QueryRequest, QueryResponse, TraceStep
+from app.schemas.query import Analysis, QueryRequest, QueryResponse, TraceStep
 from app.services.query_service import run_query
 
 router = APIRouter()
@@ -19,4 +19,5 @@ async def submit_query(
         status=run.status,
         report_markdown=run.report_markdown,
         trace=[TraceStep(**event) for event in trace_events],
+        analysis=Analysis(**run.chart_specs) if run.chart_specs else None,
     )
