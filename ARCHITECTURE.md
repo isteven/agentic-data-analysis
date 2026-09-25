@@ -1,6 +1,6 @@
 # Architecture -- Agentic Policy Data Analytics Platform
 
-> **Living document.** Every section states what is **built** today and what is **planned**. Status as of 2026-09-25: milestone M1 complete, M2 in progress. Async worker wired (queries run out-of-request, poll-based); SSE streaming not yet built.
+> **Living document.** Every section states what is **built** today and what is **planned**. Status as of 2026-09-25: milestone M1 complete, M2 in progress. Async worker wired; live trace served over SSE; frontend still polls.
 
 ## 1. Overview
 
@@ -17,7 +17,7 @@ A full-stack agentic system: a policy researcher asks a question in plain Englis
                                                           v
                           +---------------+        +------+------+
                           |     Redis     | <----> |   Worker    |
-                          | queue + pubsub|        | (SAQ, runs  |
+                          | queue+streams |        | (SAQ, runs  |
                           +---------------+        |  LangGraph) |
                                                    +------+------+
                                                           | persists
@@ -30,7 +30,7 @@ Worker also calls: LLM providers (via one provider factory),
 data.gov.sg Datastore API (client built, no dataset uses it now), local dataset files (backend/data/incoming/).
 ```
 
-**Today:** `POST /api/queries` creates the run (status `running`) and enqueues it on the SAQ worker, returning `202` immediately; `GET /api/queries/{run_id}` polls for the result. The worker runs the pipeline and publishes trace events to Redis as it goes, but nothing relays that channel to the browser yet -- the frontend polls, it doesn't stream.
+**Today:** `POST /api/queries` creates the run (status `running`) and enqueues it on the SAQ worker, returning `202` immediately; `GET /api/queries/{run_id}` polls for the result. The worker appends each trace event to a Redis Stream the moment it is emitted, and `GET /api/agent-trace/{run_id}` relays it to the browser as SSE. The frontend doesn't consume the stream yet.
 
 **Why this shape:** the API process only does fast work (accept a query, serve history, relay the trace stream); the slow work (several LLM calls, data loading) runs in a separate worker, so the API stays responsive and the trace can stream across processes.
 
@@ -42,7 +42,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | Backend API | FastAPI: 202 + background run, SSE, history, export | FastAPI: `POST /api/queries` (202 + worker run), `GET /api/queries/{run_id}` (poll), health routes | Partial |
 | Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 5 nodes; analytics is a ReAct SQL planner with gate-checked retries | Partial |
 | Async / queue | SAQ worker on Redis | `run_query_task` built, publishes trace events, and runs every query (`POST /api/queries` enqueues it); `worker` service in Compose | Built |
-| Real-time trace | Redis pub/sub -> SSE | Trace returned once, after the run | Partial |
+| Real-time trace | Redis -> SSE | Worker writes each event to a Redis Stream as emitted; `GET /api/agent-trace/{run_id}` serves it as SSE; frontend not wired yet | Partial |
 | LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI + Bedrock via one factory; per-request provider and automatic fallback (traced); no UI picker yet | Partial |
 | Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
 | Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
@@ -95,9 +95,11 @@ One `AgentState` (`backend/app/agents/state.py`), shared by all nodes: `query`, 
 
 Every node calls `emit_trace(state, node, step_type, content)` with `step_type` in `reasoning | action | observation`.
 
-- **Built:** trace events are persisted to `agent_traces` and returned with the response; the UI shows them grouped by node. The worker task runs the graph with `.astream()` and publishes each new event to Redis channel `agent-trace:{run_id}`.
+- **Built:** trace events are persisted to `agent_traces` at the end of the run. During the run, the worker installs a trace sink (a context var read by `emit_trace`), so each event -- including every planner tool call -- is appended to the Redis Stream `agent-trace:{run_id}` as it happens, not once per node.
+- **Built:** `GET /api/agent-trace/{run_id}` (SSE): `trace` events, then `done` with the run status. Reads the stream from the start, so a late subscriber misses nothing; the stream expires 1 h after the run, after which the route replays from `agent_traces`. Gives up after 10 min if a crashed worker never writes `done`.
+- **Why a Stream, not pub/sub:** pub/sub keeps nothing, and the first events fire before the browser can subscribe, so they'd be lost.
 - **Built:** `POST /api/queries` enqueues `run_query_task` and returns `202` + `run_id`; `GET /api/queries/{run_id}` polls `analysis_runs` + `agent_traces` for the result (this is the "fallback if the stream drops" path once SSE exists, and the only path today).
-- **Planned:** `GET /api/agent-trace/{run_id}` relays that Redis channel to the browser as SSE, so trace steps appear live instead of only once the run finishes.
+- **Planned:** the frontend consumes the SSE stream (steps appear live), polling `GET /api/queries/{run_id}` as the fallback.
 
 ### 3.5 Failure handling
 
@@ -194,7 +196,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 | `POST /api/queries` | Built (synchronous) -> planned: returns `202` + `run_id` | Submit a question |
 | `GET /api/health`, `GET /api/health/providers` | Built | Liveness; which providers are configured |
 | `GET /api/queries/{run_id}` | Built | Poll result (fallback if the stream drops, once SSE exists; only path today) |
-| `GET /api/agent-trace/{run_id}` | Planned | Live trace via SSE |
+| `GET /api/agent-trace/{run_id}` | Built | Live trace via SSE |
 | `GET /api/analyses`, `GET /api/analyses/{run_id}/export` | Planned | History; PDF / JSON / CSV export |
 | `GET /api/datasets` | Planned | Dataset catalog |
 
