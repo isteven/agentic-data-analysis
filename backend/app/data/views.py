@@ -16,6 +16,7 @@ from app.data.structure import ancestor_chain
 from app.models.dataset import Dataset
 
 VIEW_SCHEMA = "data"
+READER_ROLE = "data_reader"  # created by migration 0004
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 # numeric::integer tolerates years stored as 2020.0 as well as 2020
@@ -182,6 +183,40 @@ def plan_views(
     return plans
 
 
+def _has_totals_view(profile: list[dict]) -> bool:
+    # without an additive measure the "totals" view would only list the periods
+    has_time = any(c["role"] == "time" for c in profile)
+    return has_time and any(c["role"] == "measure" and c.get("additive") for c in profile)
+
+
+def view_catalog(plans: dict[str, list[tuple[str, list[dict]]]]) -> dict[str, list[dict]]:
+    """Every generated view and the columns it exposes (role, additivity, values) -
+    what the SQL gate checks queries against and what the planner is shown."""
+    catalog: dict[str, list[dict]] = {}
+    for view_name, members in plans.items():
+        profile = members[0][1]
+        structure = merge_structure([p for _, p in members])
+        columns = [dict(c) for c in profile]
+        for column, s in structure.items():
+            columns += [
+                {"column": f"{column}_level_{level}", "role": "dimension", "level_of": column}
+                for level in range(1, s["levels"])
+            ]
+        catalog[view_name] = columns
+        if _has_totals_view(profile):
+            catalog[f"{view_name}_totals"] = [
+                dict(c)
+                for c in profile
+                if c["role"] == "time" or (c["role"] == "measure" and c.get("additive"))
+            ]
+    return catalog
+
+
+async def load_view_catalog(session: AsyncSession, manifest: list[dict]) -> dict[str, list[dict]]:
+    datasets = {d.dataset_key: d for d in (await session.scalars(select(Dataset))).all()}
+    return view_catalog(plan_views(manifest, datasets))
+
+
 async def rebuild_views(session: AsyncSession, manifest: list[dict]) -> list[str]:
     """Drop and recreate every view in the `data` schema from current profiles, plus one
     generated totals-per-time-period view per typed view. The schema holds only generated
@@ -194,9 +229,12 @@ async def rebuild_views(session: AsyncSession, manifest: list[dict]) -> list[str
     for view_name, members in plans.items():
         await session.execute(text(build_typed_view_sql(view_name, members)))
         profile = members[0][1]
-        has_time = any(c["role"] == "time" for c in profile)
-        # without an additive measure the "totals" view would only list the periods
-        if has_time and any(c["role"] == "measure" and c.get("additive") for c in profile):
+        if _has_totals_view(profile):
             totals_view = f"{view_name}_totals"
             await session.execute(text(build_totals_view_sql(totals_view, view_name, profile)))
+    # dropping the schema dropped the grants too; planner SQL runs as this role
+    await session.execute(text(f"GRANT USAGE ON SCHEMA {VIEW_SCHEMA} TO {READER_ROLE}"))
+    await session.execute(
+        text(f"GRANT SELECT ON ALL TABLES IN SCHEMA {VIEW_SCHEMA} TO {READER_ROLE}")
+    )
     return sorted(plans)
