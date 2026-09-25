@@ -63,13 +63,20 @@ async def reviewer_node(state: AgentState, session: AsyncSession) -> AgentState:
     emit_trace(
         state, NODE_NAME, "reasoning", "Checking the answer actually addresses the question."
     )
-    model = node_model(state, NODE_NAME, "fast").with_structured_output(Review)
+    # Quality tier: the fast model passed a share computed without its population filter
+    # (all workers instead of women) - spotting what a query leaves out needs the stronger
+    # model, and it's one call per run.
+    model = node_model(state, NODE_NAME, "quality").with_structured_output(Review)
     review: Review = await model.ainvoke(
         "You review a data analysis before it reaches a policy researcher. Judge meaning, "
         "not arithmetic: the numbers were computed by the database and already checked "
         "against the report. Use the column descriptions to spot a column used for "
         "something it doesn't measure. Pass anything that reasonably answers the question; "
-        "fail only a clear mismatch.\n\n"
+        "fail only a clear mismatch.\n"
+        "Check the SQL itself, not the report's description of it: every group the agreed "
+        "reading limits the answer to (a sex, year, category...) must be filtered in the "
+        "SQL, and a share's denominator must be that same group. A report saying a group "
+        "over a query with no filter for it is wrong_analysis.\n\n"
         f"Question: {state['query']}\n"
         f"Agreed reading of it (judge against this): {task_question(state)}\n\n"
         f"Columns queried:\n{columns}\n\n"
