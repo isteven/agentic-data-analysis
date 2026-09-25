@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -19,6 +20,10 @@ from app.models.analysis_run import AnalysisRunDataset
 from app.models.dataset import Dataset
 from app.models.dataset_record import DatasetRecord
 from app.models.finding import Finding
+
+
+def manifest_entry_hash(entry: dict) -> str:
+    return hashlib.sha256(json.dumps(entry, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def content_hash(path: Path) -> str:
@@ -63,6 +68,9 @@ async def seed_dataset(session, entry: dict) -> None:
         return
 
     hash_ = content_hash(path)
+    # column_meta (units, descriptions) is baked into the profile, so a manifest-only
+    # edit must also re-seed - otherwise it is silently ignored until the data changes.
+    entry_hash = manifest_entry_hash(entry)
 
     existing = await session.scalar(select(Dataset).where(Dataset.dataset_key == entry["id"]))
     # also re-seed datasets seeded before stored rows existed, or by an older profiler
@@ -70,6 +78,7 @@ async def seed_dataset(session, entry: dict) -> None:
         existing is not None
         and existing.content_hash == hash_
         and (existing.quality_report or {}).get("profiler_version") == PROFILER_VERSION
+        and (existing.quality_report or {}).get("manifest_hash") == entry_hash
         and await _has_records(session, existing.id)
     ):
         print(f"skip {entry['id']}: already seeded, content unchanged")
@@ -86,6 +95,7 @@ async def seed_dataset(session, entry: dict) -> None:
         "column_count": int(len(df.columns)),
         "null_counts": {col: int(df[col].isna().sum()) for col in df.columns},
         "profiler_version": PROFILER_VERSION,
+        "manifest_hash": entry_hash,
     }
     schema_profile = profile_dataframe(df, entry)
 
