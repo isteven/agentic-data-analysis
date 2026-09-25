@@ -1,8 +1,11 @@
 from pydantic import BaseModel
 
+from app.llm.config import ProviderName
+
 
 class QueryRequest(BaseModel):
     query: str
+    provider: ProviderName | None = None  # None = server default (LLM_DEFAULT_PROVIDER)
 
 
 class TraceStep(BaseModel):

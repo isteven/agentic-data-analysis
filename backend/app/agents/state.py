@@ -49,6 +49,8 @@ class Analysis(TypedDict):
 class AgentState(TypedDict):
     query: str
     run_id: str
+    provider: str | None  # requested provider; None = LLM_DEFAULT_PROVIDER
+    fallbacks: list[str]  # "openai->bedrock" for each call that switched provider
     plan: list[PlanStep]
     raw_extracts: list[RawExtract]
     analysis: Analysis | None
@@ -59,10 +61,12 @@ class AgentState(TypedDict):
     errors: list[AgentError]
 
 
-def new_state(query: str, run_id: str) -> AgentState:
+def new_state(query: str, run_id: str, provider: str | None = None) -> AgentState:
     return AgentState(
         query=query,
         run_id=run_id,
+        provider=provider,
+        fallbacks=[],
         plan=[],
         raw_extracts=[],
         analysis=None,

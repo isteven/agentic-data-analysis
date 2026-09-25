@@ -5,14 +5,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.graph import build_graph
 from app.agents.state import new_state
+from app.core.config import get_settings
 from app.models.agent_trace import AgentTrace
 from app.models.analysis_run import AnalysisRun, AnalysisRunDataset
 from app.models.dataset import Dataset
 from app.models.finding import Finding
 
 
-async def execute_graph(session: AsyncSession, query_text: str, run_id: uuid.UUID) -> dict:
-    state = new_state(query=query_text, run_id=str(run_id))
+async def execute_graph(
+    session: AsyncSession, query_text: str, run_id: uuid.UUID, provider: str | None = None
+) -> dict:
+    state = new_state(query=query_text, run_id=str(run_id), provider=provider)
 
     graph = build_graph(session)
     try:
@@ -32,7 +35,7 @@ async def persist_run(
     run = AnalysisRun(
         id=run_id,
         query_text=query_text,
-        provider_used="openai",
+        provider_used=_provider_used(final_state),
         status=final_state["status"],
         report_markdown=final_state.get("report_markdown"),
         # the query result + chart spec: what the dashboard draws, kept for history
@@ -81,7 +84,16 @@ async def persist_run(
     return run, trace_events
 
 
-async def run_query(session: AsyncSession, query_text: str) -> tuple[AnalysisRun, list[dict]]:
+def _provider_used(final_state: dict) -> str:
+    """Requested provider, plus any switch, e.g. "openai->bedrock" (column is varchar(32))."""
+    used = final_state.get("provider") or get_settings().llm_default_provider
+    switches = sorted(set(final_state.get("fallbacks", [])))
+    return (", ".join(switches) if switches else used)[:32]
+
+
+async def run_query(
+    session: AsyncSession, query_text: str, provider: str | None = None
+) -> tuple[AnalysisRun, list[dict]]:
     run_id = uuid.uuid4()
-    final_state = await execute_graph(session, query_text, run_id)
+    final_state = await execute_graph(session, query_text, run_id, provider)
     return await persist_run(session, run_id, query_text, final_state)

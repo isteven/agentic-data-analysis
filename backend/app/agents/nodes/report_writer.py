@@ -1,6 +1,6 @@
+from app.agents.llm import node_model
 from app.agents.state import AgentState
 from app.agents.trace import emit_trace
-from app.llm.provider_factory import get_chat_model
 
 NODE_NAME = "report_writer"
 
@@ -40,7 +40,7 @@ async def report_writer_node(state: AgentState) -> AgentState:
         state, NODE_NAME, "reasoning", "Synthesizing findings into a natural-language report."
     )
 
-    model = get_chat_model(model_tier="quality")
+    model = node_model(state, NODE_NAME, "quality")
     prompt = (
         "You are a policy data analyst writing a report for a researcher. You are given "
         "a list of pre-computed, grounded findings (numbers already calculated from real "

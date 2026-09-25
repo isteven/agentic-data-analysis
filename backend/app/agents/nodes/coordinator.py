@@ -1,9 +1,9 @@
 from pydantic import BaseModel, Field
 
+from app.agents.llm import node_model
 from app.agents.state import AgentState
 from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
-from app.llm.provider_factory import get_chat_model
 
 NODE_NAME = "coordinator"
 
@@ -45,7 +45,7 @@ async def coordinator_node(state: AgentState) -> AgentState:
         f"Matching query against {len(manifest)} catalogued datasets to decide which are relevant.",
     )
 
-    model = get_chat_model(model_tier="fast").with_structured_output(CoordinatorPlan)
+    model = node_model(state, NODE_NAME, "fast").with_structured_output(CoordinatorPlan)
     prompt = (
         "You are a policy data research coordinator. Given a user's question and a "
         "catalog of available government datasets, decide which dataset(s) are "
