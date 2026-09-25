@@ -20,16 +20,16 @@ def get_chat_model(
     model_tier: Tier = "quality",
     on_fallback: FallbackHook | None = None,
 ) -> "FallbackChatModel":
-    """The requested (or default) provider, backed by the fallback provider when configured.
+    """The requested provider, backed by the fallback and then the default provider.
 
-    Providers that aren't configured are skipped, so a missing OpenAI key alone
-    still gives a working model if Bedrock is set up, and vice versa.
+    Including the default matters when the request names the fallback provider
+    itself (e.g. bedrock): the default is then what's left to fall back to.
+    Providers that aren't configured are skipped, so either one alone still works.
     """
     settings = get_settings()
-    order = [provider or ProviderName(settings.llm_default_provider)]
+    default = ProviderName(settings.llm_default_provider)
     fallback = ProviderName(settings.llm_fallback_provider)
-    if fallback not in order:
-        order.append(fallback)
+    order = list(dict.fromkeys([provider or default, fallback, default]))
 
     models: list[tuple[str, BaseChatModel]] = []
     skipped: list[str] = []
