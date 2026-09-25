@@ -38,7 +38,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 
 | Layer | Target | Built today | Status |
 |---|---|---|---|
-| Frontend | Next.js + TypeScript, Recharts, TanStack Query | Next.js + TypeScript: one query page plus an agent-trace panel | Partial |
+| Frontend | Next.js + TypeScript, Recharts, TanStack Query | Next.js + TypeScript: one query page with report, chart, data table and agent-trace panel | Partial |
 | Backend API | FastAPI: 202 + background run, SSE, history, export | FastAPI: synchronous `POST /api/queries`, health routes | Partial |
 | Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 5 nodes; analytics is a ReAct SQL planner with gate-checked retries | Partial |
 | Async / queue | SAQ worker on Redis | `run_query_task` built and publishes trace events; not wired to any route | Partial |
@@ -46,7 +46,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI only; Bedrock stubbed | Partial |
 | Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
 | Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
-| Visualisations | Charts driven by backend chart specs | None | Planned |
+| Visualisations | Charts driven by backend chart specs | Planner proposes a chart spec, checked against the result columns (`app/agents/chart.py`); Recharts chart + data table | Built |
 | History / export | History page; PDF / JSON / CSV export | None | Planned |
 | Cost tracking | Tokens and estimated cost per run | None | Planned |
 | Testing | Unit, integration, LLM accuracy / consistency, data quality, load | 62 unit tests | Partial |
@@ -198,8 +198,8 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 ## 8. Frontend
 
-- **Built:** a query form (`frontend/app/page.tsx`) showing the report and an agent-trace panel (`components/AgentTrace.tsx`) grouped by node and step type.
-- **Planned:** charts (Recharts) driven by backend chart specs; citations panel; data-quality panel; provider picker; live trace via SSE with polling fallback; history page with export; chat-style interface with follow-up questions.
+- **Built:** a query form (`frontend/app/page.tsx`) showing the report, a chart (`components/ResultChart.tsx`, Recharts, from the checked chart spec), the query result table (`components/ResultTable.tsx`) and an agent-trace panel (`components/AgentTrace.tsx`) grouped by node and step type.
+- **Planned:** citations panel; data-quality panel; provider picker; live trace via SSE with polling fallback; history page with export; chat-style interface with follow-up questions.
 - **State:** TanStack Query for server data; no global state library (no need for one at this size).
 
 ## 9. Non-functional requirements
