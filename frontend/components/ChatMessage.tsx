@@ -1,13 +1,69 @@
+"use client";
+
+import { useState } from "react";
 import { AgentTrace } from "@/components/AgentTrace";
 import { Markdown } from "@/components/Markdown";
-import { ResultChart } from "@/components/ResultChart";
+import { hasChart, ResultChart } from "@/components/ResultChart";
 import { ResultTable } from "@/components/ResultTable";
-import type { ChatTurn } from "@/lib/types";
+import type { ChatTurn, QueryResponse } from "@/lib/types";
 
 const STATUS_NOTES: Record<string, string> = {
   partial: "Partial answer — see the agent steps for what could not be answered.",
   failed: "The run failed — see the agent steps for details.",
 };
+
+type TabId = "report" | "steps" | "chart" | "data";
+
+interface Tab {
+  id: TabId;
+  label: string;
+}
+
+/** Only tabs with content; a failed run may have steps but no report, chart or data. */
+function availableTabs(result: QueryResponse): Tab[] {
+  const tabs: Tab[] = [];
+  if (result.report_markdown) tabs.push({ id: "report", label: "Report" });
+  if (result.trace.length > 0) tabs.push({ id: "steps", label: `Agent steps (${result.trace.length})` });
+  if (hasChart(result.analysis)) tabs.push({ id: "chart", label: "Chart" });
+  if (result.analysis && result.analysis.columns.length > 0) {
+    tabs.push({ id: "data", label: `Data (${result.analysis.rows.length})` });
+  }
+  return tabs;
+}
+
+function ResultTabs({ result }: { result: QueryResponse }) {
+  const tabs = availableTabs(result);
+  const [active, setActive] = useState<TabId | undefined>(tabs[0]?.id);
+  if (tabs.length === 0) return null;
+
+  return (
+    <div>
+      <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            role="tab"
+            aria-selected={active === tab.id}
+            onClick={() => setActive(tab.id)}
+            className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
+              active === tab.id
+                ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
+                : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" className="pt-4">
+        {active === "report" && result.report_markdown && <Markdown>{result.report_markdown}</Markdown>}
+        {active === "steps" && <AgentTrace steps={result.trace} />}
+        {active === "chart" && result.analysis && <ResultChart analysis={result.analysis} />}
+        {active === "data" && result.analysis && <ResultTable analysis={result.analysis} />}
+      </div>
+    </div>
+  );
+}
 
 export function ChatMessage({ turn }: { turn: ChatTurn }) {
   return (
@@ -38,14 +94,7 @@ export function ChatMessage({ turn }: { turn: ChatTurn }) {
                   {STATUS_NOTES[turn.result.status]}
                 </p>
               )}
-              {turn.result.report_markdown && <Markdown>{turn.result.report_markdown}</Markdown>}
-              {turn.result.analysis && (
-                <>
-                  <ResultChart analysis={turn.result.analysis} />
-                  <ResultTable analysis={turn.result.analysis} />
-                </>
-              )}
-              <AgentTrace steps={turn.result.trace} />
+              <ResultTabs result={turn.result} />
             </>
           )}
         </div>
