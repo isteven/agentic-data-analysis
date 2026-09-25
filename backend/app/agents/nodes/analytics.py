@@ -16,7 +16,7 @@ from sqlglot import exp
 from app.agents.chart import build_chart_spec
 from app.agents.llm import node_model
 from app.agents.planner import run_planner
-from app.agents.state import AgentState
+from app.agents.state import AgentState, task_question
 from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
 from app.data.sql_runner import QueryResult, run_checked_sql
@@ -101,7 +101,7 @@ async def analytics_node(
     catalog = await load_view_catalog(session, manifest)
     views = [v for base in view_members for v in (base, f"{base}_totals") if v in catalog]
 
-    question = state["query"]
+    question = task_question(state)
     previous = state.get("analysis") or {}
     if state.get("review_next") == NODE_NAME and state.get("review_feedback"):
         # Sent back by the reviewer: redo with its reason and the rejected query in view.

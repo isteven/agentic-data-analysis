@@ -48,7 +48,7 @@ datasets:
     topic: [employment, hours worked, occupation]
     year: 2023
     column_meta:
-      value: {unit: thousand persons, description: "Head count, not hours: employed residents aged 15+ (excl. full-time national servicemen), in thousands, in each sex x hours_bucket x occupation cell. Hours worked exist only as the hours_bucket bands; averaging value gives an average head count, not average hours. Compare hours between groups by their shares across hours_bucket"}
+      value: {unit: thousand persons, description: "Number of employed residents aged 15+ (excl. full-time national servicemen), in thousands, in each sex x hours_bucket x occupation cell. Usual hours worked are the hours_bucket bands; compare hours between groups by each group's share of its own head count in each band"}
 
   - id: mom_usual_hours_by_occupation_2024
     group: mom_usual_hours_by_occupation  # one file per year -> one combined view
@@ -62,7 +62,7 @@ datasets:
     topic: [employment, hours worked, occupation]
     year: 2024
     column_meta:
-      value: {unit: thousand persons, description: "Head count, not hours: employed residents aged 15+ (excl. full-time national servicemen), in thousands, in each sex x hours_bucket x occupation cell. Hours worked exist only as the hours_bucket bands; averaging value gives an average head count, not average hours. Compare hours between groups by their shares across hours_bucket"}
+      value: {unit: thousand persons, description: "Number of employed residents aged 15+ (excl. full-time national servicemen), in thousands, in each sex x hours_bucket x occupation cell. Usual hours worked are the hours_bucket bands; compare hours between groups by each group's share of its own head count in each band"}
 
   - id: mom_usual_hours_by_occupation_2025
     group: mom_usual_hours_by_occupation  # one file per year -> one combined view
@@ -76,4 +76,4 @@ datasets:
     topic: [employment, hours worked, occupation]
     year: 2025
     column_meta:
-      value: {unit: thousand persons, description: "Head count, not hours: employed residents aged 15+ (excl. full-time national servicemen), in thousands, in each sex x hours_bucket x occupation cell. Hours worked exist only as the hours_bucket bands; averaging value gives an average head count, not average hours. Compare hours between groups by their shares across hours_bucket"}
+      value: {unit: thousand persons, description: "Number of employed residents aged 15+ (excl. full-time national servicemen), in thousands, in each sex x hours_bucket x occupation cell. Usual hours worked are the hours_bucket bands; compare hours between groups by each group's share of its own head count in each band"}

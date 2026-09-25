@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from app.agents.nodes.analytics import analytics_node
 from app.agents.nodes.coordinator import coordinator_node
 from app.agents.nodes.extraction import extraction_node
+from app.agents.nodes.intent import intent_node, route_after_intent
 from app.agents.nodes.report_writer import report_writer_node
 from app.agents.nodes.reviewer import reviewer_node, route_after_review
 from app.agents.nodes.validator import validator_node
@@ -16,6 +17,7 @@ from app.db.session import engine as default_engine
 def build_graph(session: AsyncSession, engine: AsyncEngine = default_engine):
     graph = StateGraph(AgentState)
 
+    graph.add_node("intent", partial(intent_node, session=session))
     graph.add_node("coordinator", coordinator_node)
     graph.add_node("extraction", partial(extraction_node, session=session))
     graph.add_node("analytics", partial(analytics_node, session=session, engine=engine))
@@ -23,7 +25,11 @@ def build_graph(session: AsyncSession, engine: AsyncEngine = default_engine):
     graph.add_node("validator", validator_node)
     graph.add_node("reviewer", partial(reviewer_node, session=session))
 
-    graph.add_edge(START, "coordinator")
+    graph.add_edge(START, "intent")
+    # A question no dataset could answer ends here, before any dataset or SQL work.
+    graph.add_conditional_edges(
+        "intent", route_after_intent, {"coordinator": "coordinator", "end": END}
+    )
     graph.add_edge("coordinator", "extraction")
     graph.add_edge("extraction", "analytics")
     graph.add_edge("analytics", "report_writer")

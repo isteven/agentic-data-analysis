@@ -47,7 +47,9 @@ class Analysis(TypedDict):
 
 
 class AgentState(TypedDict):
-    query: str
+    query: str  # the user's words, as asked
+    # The intent step's precise rewrite (nodes/intent.py); None = not rewritten.
+    intent_query: str | None
     run_id: str
     provider: str | None  # requested provider; None = LLM_DEFAULT_PROVIDER
     fallbacks: list[str]  # "openai->bedrock" for each call that switched provider
@@ -69,6 +71,7 @@ class AgentState(TypedDict):
 def new_state(query: str, run_id: str, provider: str | None = None) -> AgentState:
     return AgentState(
         query=query,
+        intent_query=None,
         run_id=run_id,
         provider=provider,
         fallbacks=[],
@@ -84,3 +87,8 @@ def new_state(query: str, run_id: str, provider: str | None = None) -> AgentStat
         review_next=None,
         review_rounds=0,
     )
+
+
+def task_question(state: AgentState) -> str:
+    """What the agents work on: the intent step's precise rewrite, else the user's words."""
+    return state.get("intent_query") or state["query"]

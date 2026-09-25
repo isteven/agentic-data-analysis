@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.llm import node_model
 from app.agents.nodes.analytics import views_in
 from app.agents.planner import describe
-from app.agents.state import AgentState
+from app.agents.state import AgentState, task_question
 from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
 from app.data.views import load_view_catalog
@@ -70,7 +70,8 @@ async def reviewer_node(state: AgentState, session: AsyncSession) -> AgentState:
         "against the report. Use the column descriptions to spot a column used for "
         "something it doesn't measure. Pass anything that reasonably answers the question; "
         "fail only a clear mismatch.\n\n"
-        f"Question: {state['query']}\n\n"
+        f"Question: {state['query']}\n"
+        f"Agreed reading of it (judge against this): {task_question(state)}\n\n"
         f"Columns queried:\n{columns}\n\n"
         f"How the analyst understood the question: {analysis.get('interpretation')}\n"
         f"SQL:\n{analysis['sql']}\n\n"
