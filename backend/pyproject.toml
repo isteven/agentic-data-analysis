@@ -46,6 +46,10 @@ packages = ["app"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection idiom: Depends(...) as a default is intended.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]
+
 [tool.black]
 line-length = 100
 target-version = ["py312"]
