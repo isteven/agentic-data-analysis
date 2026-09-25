@@ -88,16 +88,15 @@ class RunResult:
 _results: list[RunResult] = []
 
 
+def _matches(cell, expected: float | str) -> bool:
+    if isinstance(expected, str):
+        return isinstance(cell, str) and cell.strip().lower() == expected.strip().lower()
+    # within rounding, not a different figure
+    return isinstance(cell, int | float) and abs(cell - expected) <= 0.005 * abs(expected)
+
+
 def _contains(rows: list[list], expected: float | str) -> bool:
-    for row in rows:
-        for cell in row:
-            if isinstance(expected, str) and isinstance(cell, str):
-                if cell.strip().lower() == expected.strip().lower():
-                    return True
-            elif isinstance(expected, int | float) and isinstance(cell, int | float):
-                if abs(cell - expected) <= 0.005 * abs(expected):  # rounding, not a different figure
-                    return True
-    return False
+    return any(_matches(cell, expected) for row in rows for cell in row)
 
 
 async def _expected(case: Case):
