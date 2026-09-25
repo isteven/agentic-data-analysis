@@ -1,3 +1,4 @@
+import { toPng } from "html-to-image";
 import { jsPDF } from "jspdf";
 import type { Analysis, Cell } from "@/lib/types";
 
@@ -27,42 +28,37 @@ export function exportTableAsCsv(analysis: Analysis, filename: string) {
 }
 
 /**
- * Renders an SVG element to a PDF page, sized to fit the page with a margin.
- * Recharts renders the chart as plain SVG, so this rasterizes that SVG onto a canvas
- * (crisper than a DOM screenshot of the whole card) and drops the bitmap into the PDF.
+ * The chart exactly as displayed - bars, axes, HTML legend and theme colours - as a
+ * PNG. Captures the rendered DOM rather than serializing Recharts' <svg>: the legend
+ * is HTML outside the chart svg, legend icons are separate small svgs, and text
+ * colours come from CSS that a bare svg export loses.
  */
-export async function exportSvgAsPdf(svg: SVGSVGElement, filename: string, caption?: string) {
-  const { width, height } = svg.getBoundingClientRect();
-  const scale = 2; // for a print-quality raster, not a blurry screen-res one
+async function captureChart(node: HTMLElement): Promise<{ dataUrl: string; width: number; height: number }> {
+  const { width, height } = node.getBoundingClientRect();
+  // The page background, so light/dark text stays readable in the image.
+  const backgroundColor = getComputedStyle(document.body).backgroundColor;
+  const dataUrl = await toPng(node, { backgroundColor, pixelRatio: 2 });
+  return { dataUrl, width, height };
+}
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context is unavailable");
-  ctx.scale(scale, scale);
-  // White background: chart strokes are theme-aware and can be near-invisible on a
-  // transparent PDF page in dark mode otherwise.
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, width, height);
+export async function exportChartAsPng(node: HTMLElement, filename: string) {
+  const { dataUrl } = await captureChart(node);
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
 
-  const svgData = new XMLSerializer().serializeToString(svg);
-  const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`;
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Failed to rasterize the chart"));
-    img.src = svgUrl;
-  });
-  ctx.drawImage(image, 0, 0, width, height);
-
+/** The same image as exportChartAsPng on a PDF page, with the question as a caption. */
+export async function exportChartAsPdf(node: HTMLElement, filename: string, caption?: string) {
+  const { dataUrl, width, height } = await captureChart(node);
   const pdf = new jsPDF({ orientation: width > height ? "landscape" : "portrait", unit: "pt" });
   const margin = 40;
   const pageWidth = pdf.internal.pageSize.getWidth() - margin * 2;
   const pageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
   const fit = Math.min(pageWidth / width, pageHeight / height);
 
-  pdf.addImage(canvas.toDataURL("image/png"), "PNG", margin, margin, width * fit, height * fit);
+  pdf.addImage(dataUrl, "PNG", margin, margin, width * fit, height * fit);
   if (caption) {
     pdf.setFontSize(9);
     pdf.text(caption, margin, margin + height * fit + 16, { maxWidth: pageWidth });

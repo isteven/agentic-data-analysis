@@ -24,3 +24,15 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Scrollbars: #666666 bar on a transparent track, in both themes. */
+* {
+  scrollbar-color: #666666 transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #666666;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
