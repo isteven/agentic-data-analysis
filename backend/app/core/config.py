@@ -33,6 +33,10 @@ class Settings(BaseSettings):
 
     cors_origin: str = "http://localhost:3000"
     rate_limit_queries_per_minute: int = 10
+    # SAQ's own default (10s) is far too short for a multi-node LangGraph run with
+    # several LLM calls; a timed-out job is cancelled mid-run and, without this, was
+    # left stuck at status "running" forever (the bug this setting exists to avoid).
+    query_job_timeout_seconds: int = 180
 
     @property
     def openai_enabled(self) -> bool:

@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.session import get_session
 from app.schemas.query import Analysis, QueryRequest, QueryResponse, TraceStep
 from app.services.query_service import create_run, get_run
@@ -14,6 +15,7 @@ router = APIRouter()
 def _to_response(run, trace_events: list[dict]) -> QueryResponse:
     return QueryResponse(
         run_id=str(run.id),
+        query_text=run.query_text,
         status=run.status,
         provider_used=run.provider_used,
         report_markdown=run.report_markdown,
@@ -34,7 +36,15 @@ async def submit_query(
     run_id = uuid.uuid4()
     run = await create_run(session, run_id, body.query, body.provider)
     await queue.enqueue(
-        "run_query_task", run_id=str(run_id), query_text=body.query, provider=body.provider
+        "run_query_task",
+        run_id=str(run_id),
+        query_text=body.query,
+        provider=body.provider,
+        timeout=get_settings().query_job_timeout_seconds,
+        # A timed-out job is a completed run, marked failed by run_query_task's own
+        # CancelledError handler - not a transient error worth silently re-running the
+        # whole (expensive, multi-LLM-call) pipeline for.
+        retries=0,
     )
     response.headers["Location"] = f"/api/queries/{run_id}"
     return _to_response(run, [])

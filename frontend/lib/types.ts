@@ -6,6 +6,7 @@ export interface TraceStep {
 
 export interface QueryResponse {
   run_id: string;
+  query_text: string;
   status: string;
   provider_used: string | null;
   report_markdown: string | null;
@@ -49,4 +50,14 @@ export interface ChatTurn {
 export interface ProvidersInfo {
   default: string;
   providers: Record<string, { enabled: boolean }>;
+}
+
+/** One row of GET /api/analyses. */
+export interface AnalysisSummary {
+  run_id: string;
+  query_text: string;
+  status: string;
+  provider_used: string | null;
+  created_at: string;
+  completed_at: string | null;
 }

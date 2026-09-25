@@ -1,6 +1,7 @@
 import uuid
+from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.graph import build_graph
@@ -61,6 +62,7 @@ async def persist_run(
     run.report_markdown = final_state.get("report_markdown")
     # the query result + chart spec: what the dashboard draws, kept for history
     run.chart_specs = final_state.get("analysis")
+    run.completed_at = datetime.now(UTC)
     await session.flush()
 
     dataset_ids_used = {extract["dataset_id"] for extract in final_state.get("raw_extracts", [])}
@@ -119,6 +121,15 @@ async def run_query(
     run_id = uuid.uuid4()
     final_state = await execute_graph(session, query_text, run_id, provider)
     return await persist_run(session, run_id, query_text, final_state)
+
+
+async def list_runs(session: AsyncSession, limit: int = 50) -> list[AnalysisRun]:
+    """For GET /api/analyses: most recent runs first, no trace/findings (kept light for
+    a list view - the detail view is GET /api/queries/{run_id})."""
+    rows = await session.scalars(
+        select(AnalysisRun).order_by(desc(AnalysisRun.created_at)).limit(limit)
+    )
+    return list(rows)
 
 
 async def get_run(session: AsyncSession, run_id: uuid.UUID) -> tuple[AnalysisRun, list[dict]] | None:

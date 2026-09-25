@@ -1,5 +1,6 @@
 "use client";
 
+import { forwardRef } from "react";
 import {
   Bar,
   BarChart,
@@ -58,7 +59,12 @@ export function hasChart(analysis: Analysis | null): boolean {
   return toPoints(analysis).points.length > 0;
 }
 
-export function ResultChart({ analysis }: { analysis: Analysis }) {
+/** `ref` is forwarded to the chart's container div, so a caller (the export button)
+ * can find the rendered <svg> via ref.current.querySelector("svg"). */
+export const ResultChart = forwardRef<HTMLDivElement, { analysis: Analysis }>(function ResultChart(
+  { analysis },
+  ref,
+) {
   const chart = analysis.chart;
   if (!chart || !hasChart(analysis) || !chart.x) return null;
 
@@ -76,7 +82,7 @@ export function ResultChart({ analysis }: { analysis: Analysis }) {
 
   return (
     <figure>
-      <div className="h-72 w-full">
+      <div ref={ref} className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           {chart.type === "bar" ? (
             <BarChart data={points}>
@@ -109,4 +115,4 @@ export function ResultChart({ analysis }: { analysis: Analysis }) {
       )}
     </figure>
   );
-}
+});

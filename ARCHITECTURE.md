@@ -47,7 +47,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
 | Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
 | Visualisations | Charts driven by backend chart specs | Planner proposes a chart spec, checked against the result columns (`app/agents/chart.py`); Recharts chart + data table | Built |
-| History / export | History page; PDF / JSON / CSV export | None | Planned |
+| History / export | History page; PDF / JSON / CSV export | `/history` list + detail page; chart export to PDF, table export to CSV (client-side); no JSON export | Partial |
 | Cost tracking | Tokens and estimated cost per run | None | Planned |
 | Testing | Unit, integration, LLM accuracy / consistency, data quality, load | 62 unit tests | Partial |
 | CI/CD | GitHub Actions | None | Planned |
@@ -197,15 +197,15 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 | `GET /api/health`, `GET /api/health/providers` | Built | Liveness; which providers are configured |
 | `GET /api/queries/{run_id}` | Built | Poll result (fallback if the stream drops, once SSE exists; only path today) |
 | `GET /api/agent-trace/{run_id}` | Built | Live trace via SSE |
-| `GET /api/analyses`, `GET /api/analyses/{run_id}/export` | Planned | History; PDF / JSON / CSV export |
+| `GET /api/analyses` | Built | History list (query, status, provider, timestamps); detail reuses `GET /api/queries/{run_id}` |
 | `GET /api/datasets` | Planned | Dataset catalog |
 
 **Async processing:** SAQ worker (`backend/app/worker.py`), same Docker image as the API with a different command (`worker` service in `infra/docker-compose.yml`); `scripts/queue_status.py` inspects the queue.
 
 ## 8. Frontend
 
-- **Built:** a query form (`frontend/app/page.tsx`) showing the report, a chart (`components/ResultChart.tsx`, Recharts, from the checked chart spec), the query result table (`components/ResultTable.tsx`) and an agent-trace panel (`components/AgentTrace.tsx`) grouped by node and step type.
-- **Planned:** citations panel; data-quality panel; provider picker; live trace via SSE with polling fallback; history page with export; chat-style interface with follow-up questions.
+- **Built:** a chat-style query interface (`frontend/app/page.tsx`) with a provider picker; each answer shows the report, chart (`components/ResultChart.tsx`, Recharts) and query result table (`components/ResultTable.tsx`) in tabs, plus the agent-trace panel (`components/AgentTrace.tsx`). Agent steps stream live over SSE while a run is in progress (`lib/runs.ts`), falling back to polling `GET /api/queries/{run_id}` if the stream drops. `/history` lists past runs; `/history/{runId}` shows the full result. Chart tab has an Export PDF button (SVG rasterized to a PDF via `jspdf`); Data tab has Export CSV (client-side, no backend export endpoint).
+- **Planned:** citations panel; data-quality panel; JSON export; follow-up questions using earlier turns as context (needs the session-id backend work in `project-management.md`'s M2.3, not yet done).
 - **State:** TanStack Query for server data; no global state library (no need for one at this size).
 
 ## 9. Non-functional requirements

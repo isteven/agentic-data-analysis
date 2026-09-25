@@ -1,4 +1,4 @@
-import type { QueryResponse, TraceStep } from "@/lib/types";
+import type { AnalysisSummary, QueryResponse, TraceStep } from "@/lib/types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -18,6 +18,14 @@ export async function submitQuery(query: string, provider?: string): Promise<Que
   });
   if (!res.ok) throw new Error(`Submitting the question failed (HTTP ${res.status})`);
   return res.json();
+}
+
+/** GET /api/analyses: past runs, most recent first. */
+export async function fetchAnalyses(): Promise<AnalysisSummary[]> {
+  const res = await fetch(`${API_URL}/api/analyses`);
+  if (!res.ok) throw new Error(`Fetching history failed (HTTP ${res.status})`);
+  const data: { runs: AnalysisSummary[] } = await res.json();
+  return data.runs;
 }
 
 export async function fetchRun(runId: string): Promise<QueryResponse> {
