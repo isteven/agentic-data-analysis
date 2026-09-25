@@ -28,7 +28,7 @@ NODE_NAME = "analytics"
 MAX_FINDINGS = 200  # the report cites a handful; this only bounds a runaway result
 
 
-def _views_in(sql: str) -> list[str]:
+def views_in(sql: str) -> list[str]:
     tree = sqlglot.parse_one(sql, read="postgres")
     seen: list[str] = []
     for table in tree.find_all(exp.Table):
@@ -45,7 +45,7 @@ def findings_from_result(
     """One finding per numeric value in the result, labelled by the row's label columns.
     `view_members` is view -> [(dataset id, manifest year)]: a view built from one file
     per year cites the file for the row's year, not just the first file."""
-    used = _views_in(result.sql)
+    used = views_in(result.sql)
     label_columns = {
         c["column"] for v in used for c in catalog.get(v, []) if c["role"] in ("time", "dimension")
     }
@@ -100,10 +100,22 @@ async def analytics_node(
 
     catalog = await load_view_catalog(session, manifest)
     views = [v for base in view_members for v in (base, f"{base}_totals") if v in catalog]
+
+    question = state["query"]
+    previous = state.get("analysis") or {}
+    if state.get("review_next") == NODE_NAME and state.get("review_feedback"):
+        # Sent back by the reviewer: redo with its reason and the rejected query in view.
+        question = (
+            f"{question}\n\nA reviewer rejected the previous answer: "
+            f"{state['review_feedback']}\nRejected query: {previous.get('sql')}"
+        )
+        state["findings"] = []
+        state["errors"] = [e for e in state["errors"] if e["node_name"] != NODE_NAME]
+        emit_trace(state, NODE_NAME, "reasoning", "Re-planning with the reviewer's feedback.")
     emit_trace(state, NODE_NAME, "reasoning", f"Planning a query over: {', '.join(views)}.")
 
     outcome = await run_planner(
-        question=state["query"],
+        question=question,
         views=views,
         catalog=catalog,
         model=node_model(state, NODE_NAME, "fast"),
@@ -120,7 +132,7 @@ async def analytics_node(
         "truncated": result.truncated if result else False,
         "reason": outcome.reason,
         "chart": (
-            build_chart_spec(outcome.chart_suggestion, result, catalog, _views_in(result.sql))
+            build_chart_spec(outcome.chart_suggestion, result, catalog, views_in(result.sql))
             if result
             else None
         ),

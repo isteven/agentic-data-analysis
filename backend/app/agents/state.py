@@ -59,6 +59,11 @@ class AgentState(TypedDict):
     grounded: bool | None
     trace_events: list[TraceEvent]
     errors: list[AgentError]
+    # Quality review (nodes/reviewer.py): the latest verdict's reason, fed back to the
+    # step being redone, and how many times the run has been sent back.
+    review_feedback: str | None
+    review_next: str | None  # "analytics" | "report_writer" | None (= finish)
+    review_rounds: int
 
 
 def new_state(query: str, run_id: str, provider: str | None = None) -> AgentState:
@@ -75,4 +80,7 @@ def new_state(query: str, run_id: str, provider: str | None = None) -> AgentStat
         grounded=None,
         trace_events=[],
         errors=[],
+        review_feedback=None,
+        review_next=None,
+        review_rounds=0,
     )

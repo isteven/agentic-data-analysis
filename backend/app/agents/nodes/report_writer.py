@@ -35,6 +35,13 @@ def _format_errors(errors: list[dict]) -> str:
     return "\n".join(f"- [{e['node_name']}] {e['message']}" for e in errors)
 
 
+def _review_note(state: AgentState) -> str:
+    """The reviewer's reason when it sent the previous draft back (nodes/reviewer.py)."""
+    if state.get("review_next") == NODE_NAME and state.get("review_feedback"):
+        return f"A reviewer rejected your previous draft: {state['review_feedback']} Fix this.\n\n"
+    return ""
+
+
 async def report_writer_node(state: AgentState) -> AgentState:
     emit_trace(
         state, NODE_NAME, "reasoning", "Synthesizing findings into a natural-language report."
@@ -49,7 +56,9 @@ async def report_writer_node(state: AgentState) -> AgentState:
         "Cite the source dataset for every number you mention. If findings are missing or "
         "incomplete for part of the question, say so explicitly rather than guessing. "
         "Say briefly how the question was interpreted. Keep numbers as given (you may "
-        "round), and give units where the data states them.\n\n"
+        "round), and give units where the data states them. The app shows a chart and "
+        "the result table next to your report, so never say you can't provide a chart.\n\n"
+        f"{_review_note(state)}"
         f"User question: {state['query']}\n\n"
         f"Query result (computed by the database):\n{_format_analysis(state.get('analysis'))}\n\n"
         f"Findings:\n{_format_findings(state['findings'])}\n\n"
