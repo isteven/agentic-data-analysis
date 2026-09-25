@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { Composer } from "@/components/Composer";
-import type { ChatTurn, ProvidersInfo, QueryResponse } from "@/lib/types";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { API_URL, submitQuery, watchRun } from "@/lib/runs";
+import type { ChatTurn, ProvidersInfo } from "@/lib/types";
 
 const SUGGESTIONS = [
   "How did retrenchment of residents and non-residents change since 2015?",
@@ -40,21 +39,19 @@ export default function Home() {
   async function ask(query: string) {
     const id = crypto.randomUUID();
     setDraft("");
-    setTurns((prev) => [...prev, { id, query, pending: true }]);
-    const update = (patch: Partial<ChatTurn>) =>
-      setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch, pending: false } : t)));
+    setTurns((prev) => [...prev, { id, query, pending: true, liveSteps: [] }]);
+    const patch = (fn: (t: ChatTurn) => Partial<ChatTurn>) =>
+      setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...fn(t) } : t)));
 
     try {
-      const res = await fetch(`${API_URL}/api/queries`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, provider: provider || undefined }),
-      });
-      if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
-      update({ result: (await res.json()) as QueryResponse });
+      const { run_id } = await submitQuery(query, provider);
+      const result = await watchRun(run_id, (step) =>
+        patch((t) => ({ liveSteps: [...t.liveSteps, step] })),
+      );
+      patch(() => ({ result, pending: false }));
     } catch (err) {
       console.error(`[DEBUG] ${new Date().toISOString()} ask failed`, { query, err });
-      update({ error: err instanceof Error ? err.message : "Something went wrong" });
+      patch(() => ({ pending: false, error: err instanceof Error ? err.message : "Something went wrong" }));
     }
   }
 

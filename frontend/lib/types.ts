@@ -35,11 +35,12 @@ export interface Analysis {
   chart: ChartSpec | null;
 }
 
-/** One question and its answer in the chat; pending until the backend responds. */
+/** One question and its answer in the chat; pending until the run finishes. */
 export interface ChatTurn {
   id: string;
   query: string;
   pending: boolean;
+  liveSteps: TraceStep[]; // streamed while pending; replaced by result.trace when done
   result?: QueryResponse;
   error?: string;
 }
