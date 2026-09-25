@@ -8,7 +8,7 @@ from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import agent_trace, health, queries
+from app.api.routes import agent_trace, analyses, health, queries
 from app.core.config import get_settings
 from scripts.seed_datasets import main as seed_datasets
 
@@ -42,3 +42,4 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(queries.router)
 app.include_router(agent_trace.router)
+app.include_router(analyses.router)

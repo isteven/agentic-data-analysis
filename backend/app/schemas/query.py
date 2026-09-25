@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 from app.llm.config import ProviderName
@@ -42,3 +44,19 @@ class QueryResponse(BaseModel):
     report_markdown: str | None = None
     trace: list[TraceStep] = []
     analysis: Analysis | None = None
+
+
+class AnalysisSummary(BaseModel):
+    """One row in the history list - light on purpose; GET /api/queries/{run_id} has
+    the full report/trace/analysis for the detail view."""
+
+    run_id: str
+    query_text: str
+    status: str
+    provider_used: str | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
+
+
+class AnalysisListResponse(BaseModel):
+    runs: list[AnalysisSummary]
