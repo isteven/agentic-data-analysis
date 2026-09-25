@@ -9,9 +9,7 @@ def read_mom_hours_sheet(path: str, sheet_name: str) -> pd.DataFrame:
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb[sheet_name]
 
-    header_cells = next(
-        ws.iter_rows(min_row=HEADER_ROW, max_row=HEADER_ROW, values_only=True)
-    )
+    header_cells = next(ws.iter_rows(min_row=HEADER_ROW, max_row=HEADER_ROW, values_only=True))
     occupations = [str(c).strip() for c in header_cells[2:] if c is not None]
 
     records = []

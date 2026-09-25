@@ -89,3 +89,50 @@ def test_profile_is_json_serialisable():
     profile = profile_dataframe(_sample_df(), {})
 
     json.dumps(profile)  # must not raise on numpy / NaN values
+
+
+def test_numeric_code_that_relabels_a_text_column_is_a_dimension():
+    df = pd.DataFrame(
+        {
+            "station_code": [238826, 189561, 238826, 189561],
+            "station": ["DHOBY GHAUT", "BRAS BASAH", "DHOBY GHAUT", "BRAS BASAH"],
+            "minutes": [18.8, 19.4, 20.1, 17.2],
+        }
+    )
+
+    cols = _by_column(profile_dataframe(df, {}))
+
+    assert cols["station_code"]["role"] == "dimension"
+    assert cols["minutes"]["role"] == "measure"
+
+
+def test_one_value_per_row_measure_is_not_mistaken_for_a_code():
+    # unique per row, but not paired 1:1 with any text column
+    df = pd.DataFrame({"year": [2020, 2021, 2022], "total": [26110, 8020, 6440]})
+
+    assert _by_column(profile_dataframe(df, {}))["total"]["role"] == "measure"
+
+
+def test_additivity_is_inferred_from_parents_matching_their_parts():
+    years = [2019, 2020, 2021, 2022, 2023, 2024]
+    a, b = [10, 20, 30, 40, 50, 60], [5, 7, 9, 11, 13, 15]
+    counts = {
+        "a": a,
+        "b": b,
+        "ab": [x + z for x, z in zip(a, b)],
+        "o": [500, 1, 500, 1, 500, 1],  # no value dominates: ab is a parent, not a total
+    }
+    # rates that don't add up in any grouping (a + b != ab + o, etc.)
+    rate_offset = {"a": 0.0, "b": 11.3, "ab": 2.9, "o": 23.7}
+    rows = [
+        {"year": y, "industry": label, "count": v, "rate": base + rate_offset[label]}
+        for label, series in counts.items()
+        for y, v, base in zip(years, series, np.linspace(60, 75, 6))
+    ]
+
+    cols = _by_column(profile_dataframe(pd.DataFrame(rows), {}))
+
+    assert cols["count"]["additive"] is True
+    assert cols["rate"]["additive"] is False  # nothing proves rates add up
+    assert cols["industry"]["parents"] == {"a": "ab", "b": "ab"}
+    assert cols["industry"]["levels"] == 2

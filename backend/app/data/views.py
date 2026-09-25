@@ -8,11 +8,11 @@ SQL generation queries these views, never the JSON directly.
 
 import re
 import uuid
-from dataclasses import dataclass, field
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.data.structure import ancestor_chain
 from app.models.dataset import Dataset
 
 VIEW_SCHEMA = "data"
@@ -38,38 +38,93 @@ def _quote_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def _exclusion_clauses(profile: list[dict], exclude_values: dict | None) -> list[str]:
-    """Drop total rows and overlapping buckets (manifest `exclude_values`) so every row
-    left in the view is safe to add up. Filters the raw JSON value: Postgres can't refer
-    to SELECT aliases in WHERE. Rows with no value in that column are kept - a bare
-    NOT IN would silently drop them."""
-    columns = {c["column"] for c in profile}
+def _raw(column: str) -> str:
+    # Filters use the raw JSON value: Postgres can't refer to SELECT aliases in WHERE
+    return f"(record->>{_quote_literal(column)})"
+
+
+def merge_structure(profiles: list[list[dict]]) -> dict[str, dict]:
+    """One structure per dimension for a view whose members (e.g. one file per year) were
+    profiled separately: union of exclusions, parents and unverified periods."""
+    merged: dict[str, dict] = {}
+    for profile in profiles:
+        for c in profile:
+            if c["role"] != "dimension" or not any(
+                c.get(k) for k in ("parents", "exclude_values", "unverified_periods")
+            ):
+                continue
+            m = merged.setdefault(
+                c["column"], {"parents": {}, "exclude_values": set(), "unverified_periods": []}
+            )
+            for child, parent in (c.get("parents") or {}).items():
+                m["parents"].setdefault(child, parent)
+            m["exclude_values"].update(c.get("exclude_values") or [])
+            for period in c.get("unverified_periods") or []:
+                if period not in m["unverified_periods"]:
+                    m["unverified_periods"].append(period)
+    for m in merged.values():
+        m["levels"] = max((len(ancestor_chain(v, m["parents"])) for v in m["parents"]), default=1)
+    return merged
+
+
+def _level_columns(column: str, structure: dict) -> list[str]:
+    """`<column>_level_1` = top of the hierarchy, and so on down; a value with fewer
+    ancestors repeats itself at the deeper levels, so GROUP BY any level covers every row
+    exactly once."""
+    parents, raw = structure["parents"], _raw(column)
+    leaves = {v for v in parents if v not in set(parents.values())}
+    out = []
+    for level in range(1, structure["levels"]):
+        whens = []
+        for leaf in sorted(leaves):
+            chain = ancestor_chain(leaf, parents)
+            name = chain[min(level - 1, len(chain) - 1)]
+            if name != leaf:
+                whens.append(f"WHEN {_quote_literal(leaf)} THEN {_quote_literal(name)}")
+        body = "\n        ".join(whens)
+        out.append(
+            f"CASE {raw}\n        {body}\n        ELSE {raw} END "
+            f"AS {_quote_identifier(f'{column}_level_{level}')}"
+        )
+    return out
+
+
+def _structure_clauses(structure: dict[str, dict], time_col: str | None) -> list[str]:
+    """Keep only rows safe to add up: lowest-level values (parents are the sum of their
+    children), no grand totals or overlapping buckets, no second classification scheme,
+    and no years whose classification couldn't be verified."""
     clauses = []
-    for column, values in (exclude_values or {}).items():
-        if column not in columns:
-            raise ValueError(f"exclude_values column '{column}' is not in this dataset's profile")
-        raw = f"(record->>{_quote_literal(column)})"
-        literals = ", ".join(_quote_literal(v) for v in values)
-        clauses.append(f"({raw} IS NULL OR {raw} NOT IN ({literals}))")
+    for column, s in structure.items():
+        drop = sorted(set(s["exclude_values"]) | set(s["parents"].values()))
+        if drop:
+            raw = _raw(column)
+            literals = ", ".join(_quote_literal(v) for v in drop)
+            # rows with no value are kept - a bare NOT IN would silently drop them
+            clauses.append(f"({raw} IS NULL OR {raw} NOT IN ({literals}))")
+        if time_col:
+            for lo, hi in s["unverified_periods"]:
+                clauses.append(f"{_raw(time_col)}::numeric NOT BETWEEN {float(lo)} AND {float(hi)}")
     return clauses
 
 
-def _member_select(dataset_id: str, profile: list[dict], exclude_values: dict | None) -> str:
+def _member_select(dataset_id: str, profile: list[dict], structure: dict[str, dict]) -> str:
     dataset_id = str(uuid.UUID(dataset_id))  # raises ValueError if not a UUID
-    columns = ",\n    ".join(
+    columns = [
         f"(record->>{_quote_literal(c['column'])})::{_CASTS[c['role']]} "
         f"AS {_quote_identifier(c['column'])}"
         for c in profile
-    )
+    ]
+    for c in profile:
+        if c["column"] in structure:
+            columns += _level_columns(c["column"], structure[c["column"]])
+    time_col = next((c["column"] for c in profile if c["role"] == "time"), None)
     where = "\n  AND ".join(
-        [f"dataset_id = '{dataset_id}'", *_exclusion_clauses(profile, exclude_values)]
+        [f"dataset_id = '{dataset_id}'", *_structure_clauses(structure, time_col)]
     )
-    return f"SELECT\n    {columns}\nFROM dataset_records\nWHERE {where}"
+    return "SELECT\n    " + ",\n    ".join(columns) + f"\nFROM dataset_records\nWHERE {where}"
 
 
-def build_typed_view_sql(
-    view_name: str, members: list[tuple[str, list[dict]]], exclude_values: dict | None = None
-) -> str:
+def build_typed_view_sql(view_name: str, members: list[tuple[str, list[dict]]]) -> str:
     if not _IDENTIFIER.match(view_name):
         raise ValueError(f"'{view_name}' is not a safe view name")
     first_columns = [c["column"] for c in members[0][1]]
@@ -84,7 +139,8 @@ def build_typed_view_sql(
         (dataset_id, sorted(profile, key=lambda c: first_columns.index(c["column"])))
         for dataset_id, profile in members
     ]
-    body = "\nUNION ALL\n".join(_member_select(d, p, exclude_values) for d, p in ordered)
+    structure = merge_structure([p for _, p in ordered])
+    body = "\nUNION ALL\n".join(_member_select(d, p, structure) for d, p in ordered)
     return f"CREATE VIEW {VIEW_SCHEMA}.{view_name} AS\n{body}"
 
 
@@ -112,33 +168,17 @@ def build_totals_view_sql(view_name: str, base_view_name: str, profile: list[dic
     )
 
 
-@dataclass
-class ViewPlan:
-    members: list[tuple[str, list[dict]]] = field(default_factory=list)
-    exclude_values: dict = field(default_factory=dict)
-
-
-def plan_views(manifest: list[dict], datasets_by_key: dict) -> dict[str, ViewPlan]:
-    """Which views to build, from the manifest and the seeded datasets. Only
-    `exclude_values` shapes a view; `default_slice` is deliberately ignored - it means
-    "when the query doesn't filter this column", which a fixed view can't express."""
-    plans: dict[str, ViewPlan] = {}
+def plan_views(
+    manifest: list[dict], datasets_by_key: dict
+) -> dict[str, list[tuple[str, list[dict]]]]:
+    """View name -> its members (dataset id, profile). What a view keeps comes from the
+    inferred structure in each profile, not from the manifest."""
+    plans: dict[str, list[tuple[str, list[dict]]]] = {}
     for entry in manifest:
         dataset = datasets_by_key.get(entry["id"])
         if dataset is None or not dataset.schema_profile:
             continue
-        view_name = view_name_for(entry)
-        exclude_values = entry.get("exclude_values") or {}
-        plan = plans.get(view_name)
-        if plan is None:
-            plan = plans[view_name] = ViewPlan(exclude_values=exclude_values)
-        elif plan.exclude_values != exclude_values:
-            # One view, one set of rules: members declaring different ones is a manifest bug
-            raise ValueError(
-                f"Datasets in view '{view_name}' declare different exclude_values; "
-                f"'{entry['id']}' differs from the first member"
-            )
-        plan.members.append((str(dataset.id), dataset.schema_profile))
+        plans.setdefault(view_name_for(entry), []).append((str(dataset.id), dataset.schema_profile))
     return plans
 
 
@@ -151,12 +191,12 @@ async def rebuild_views(session: AsyncSession, manifest: list[dict]) -> list[str
 
     await session.execute(text(f"DROP SCHEMA IF EXISTS {VIEW_SCHEMA} CASCADE"))
     await session.execute(text(f"CREATE SCHEMA {VIEW_SCHEMA}"))
-    for view_name, plan in plans.items():
-        await session.execute(
-            text(build_typed_view_sql(view_name, plan.members, plan.exclude_values))
-        )
-        profile = plan.members[0][1]
-        if any(c["role"] == "time" for c in profile):
+    for view_name, members in plans.items():
+        await session.execute(text(build_typed_view_sql(view_name, members)))
+        profile = members[0][1]
+        has_time = any(c["role"] == "time" for c in profile)
+        # without an additive measure the "totals" view would only list the periods
+        if has_time and any(c["role"] == "measure" and c.get("additive") for c in profile):
             totals_view = f"{view_name}_totals"
             await session.execute(text(build_totals_view_sql(totals_view, view_name, profile)))
     return sorted(plans)
