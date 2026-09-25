@@ -19,10 +19,11 @@ seed script works around.
 
 **Current implementation status: M1 is complete; M2 is in progress.** The real 5-node
 LangGraph pipeline (coordinator → extraction → analytics → report_writer → validator) is
-built and merged to `main`. Typed Postgres views over the stored dataset rows, shaped by
-structure inferred at ingest, are built for the planned SQL planner; the query path still
-uses the pandas analytics node. The live data.gov.sg API client exists but no current
-dataset uses `mode: api`. Still outstanding from M2: the SAQ worker task exists
+built and merged to `main`. The analytics node is a ReAct SQL planner
+(`app/agents/planner.py`): it queries typed Postgres views over the stored dataset rows,
+shaped by structure inferred at ingest, through a gate + read-only runner
+(`app/data/sql_gate.py`, `sql_runner.py`). The live data.gov.sg API client exists but no
+current dataset uses `mode: api`. Still outstanding from M2: the SAQ worker task exists
 (`backend/app/worker.py`) but no route enqueues it yet — `/api/queries` still runs the
 graph synchronously in-request; there is no SSE trace streaming yet (the frontend
 fetches the trace once, after the run completes); Bedrock is stubbed, not live; no

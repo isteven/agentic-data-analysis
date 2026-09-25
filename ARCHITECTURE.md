@@ -40,7 +40,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 |---|---|---|---|
 | Frontend | Next.js + TypeScript, Recharts, TanStack Query | Next.js + TypeScript: one query page plus an agent-trace panel | Partial |
 | Backend API | FastAPI: 202 + background run, SSE, history, export | FastAPI: synchronous `POST /api/queries`, health routes | Partial |
-| Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 5 nodes in a straight line | Partial |
+| Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 5 nodes; analytics is a ReAct SQL planner with gate-checked retries | Partial |
 | Async / queue | SAQ worker on Redis | `run_query_task` built and publishes trace events; not wired to any route | Partial |
 | Real-time trace | Redis pub/sub -> SSE | Trace returned once, after the run | Partial |
 | LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI only; Bedrock stubbed | Partial |
@@ -58,49 +58,34 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 ### 3.1 Current pipeline (built)
 
 ```
-START -> coordinator -> extraction -> analytics -> report_writer -> validator -> END
+START -> coordinator -> extraction -> analytics (ReAct SQL planner) -> report_writer -> validator -> END
+                                          ^  describe / sample / run_sql  |
+                                          +------ observe, retry ---------+
 ```
 
 | Node | LLM? | What it does |
 |---|---|---|
 | **coordinator** | Yes (fast tier) | Reads the dataset catalog (`manifest.yaml`) and picks the datasets relevant to the question (structured output) |
-| **extraction** | No | Loads each selected dataset: live data.gov.sg API with file fallback, or the local file; applies the shared cleaning (section 5.3) |
-| **analytics** | No | Matches query words to category values, keeps non-overlapping rows (`default_slice`), sums the measure per year plus a first-to-last change; emits `Finding`s |
-| **report_writer** | Yes (quality tier) | Writes the report from the findings only, citing the source dataset for each number |
-| **validator** | No | Extracts every number from the report and checks it matches a finding (1% tolerance); appends a warning if any don't |
+| **extraction** | No | Checks each chosen dataset is stored, maps it to its typed view, and traces the data-quality facts inferred at ingest (totals/overlaps excluded, unverified periods, summable measures) |
+| **analytics** | Yes (fast tier) | ReAct planner (`app/agents/planner.py`): tools `describe_view`, `sample_rows`, `run_sql`, then `submit_answer(sql, interpretation)` or `cannot_answer`. Max 8 tool calls. Every query goes through the SQL gate and read-only runner; a rejection is an observation the planner fixes. The submitted query's result becomes `Finding`s |
+| **report_writer** | Yes (quality tier) | Writes the report from the query result and findings only, stating how the question was interpreted and citing sources |
+| **validator** | No | Every number in the report must match a finding (1% tolerance); numbers from the question or result labels count as context. Appends a warning otherwise |
 
-**Known limitations** (addressed by 3.2):
+**Safety of LLM-written SQL** (`app/data/sql_gate.py`, `sql_runner.py`): sqlglot allows one `SELECT` over `data` views only, known columns (with "did you mean" hints), no `SUM` over non-additive measures, no side-effect functions, and runs the SQL regenerated from the checked tree. Postgres then runs it in a `READ ONLY` transaction as the `NOLOGIN` role `data_reader` (SELECT on the views only), with a 5 s timeout and a 500-row cap. Each layer alone stops a write.
 
-- Straight line: no agent looks at a result and decides what to do next.
-- Analytics relies on hardcoded metric-column names and only sums; question wording is matched literally (no year ranges, no synonyms).
-- The validator checks the report against the findings, not the findings against the truth: a wrong computation passes as "grounded".
-- Only two nodes make decisions.
+**Still open** (from 3.2): intent rewriting, quality review with root-cause routing, units carried into findings.
 
-### 3.2 Planned: query-planning redesign (checked SQL)
-
-```
-intent -> coordinator -> planner -> SQL check -> run (read-only) -> report_writer -> number check -> quality review -> END
- (LLM)      (LLM)       (LLM:SQL) ^  (code)  |      (Postgres)          (LLM)           (code)          (LLM)
-                                  +- retry --+                                                         |
-             ^            ^                                                                            |
-             +------------+----------------------- route back by root cause --------------------------+
-```
+### 3.2 Planned additions
 
 | Step | LLM? | Responsibility |
 |---|---|---|
 | Intent | Yes | Rewrite the question precisely ("layoff" -> retrenchment, "past 3 years" -> 2023-2025); reject questions the catalog can't answer |
-| Coordinator | Yes | Pick datasets |
-| Planner | Yes | Write one PostgreSQL `SELECT` over the typed dataset views (section 5.4), or say the question can't be answered |
-| SQL check | No | `sqlglot`: a single read-only `SELECT`; allowed views only; columns exist (with "did you mean" hints); no `SUM` on non-additive columns; views aggregated before joining. Errors go back to the planner (max 2 retries) |
-| Run | No | Executed by Postgres as a read-only role that can see only the `data` views, with a statement timeout; every result value becomes a `Finding` |
-| Report writer | Yes | Prose from findings only |
-| Number check | No | Every number in the report must match a finding |
-| Quality review | Yes | LLM judge: does the report answer the question, is anything misdescribed, were the right datasets used? Routes a failure back to the coordinator, planner or report writer |
+| Quality review | Yes | LLM judge after the number check: does the report answer the question, is anything misdescribed, were the right datasets used? Routes a failure back to the coordinator, planner or report writer |
 
 **Principles:**
 - LLMs interpret the question, choose what to compute and judge the result; **the database computes every number**. No LLM ever re-types data.
-- **Data rules live in the views, not the prompt:** views expose only rows that are safe to add up (no total rows mixed with their parts, no overlapping categories). A spike showed prompt instructions alone did not stop double-counting; view shape did. The rules themselves are inferred from the data (section 5.5), not written per dataset.
-- Column knowledge comes from the schema profiled at ingest (section 5.5), so the query path has no hardcoded column names or operation lists.
+- **Data rules live in the views, not the prompt:** views expose only rows that are safe to add up. A spike showed prompt instructions alone did not stop double-counting; view shape did. The rules are inferred from the data (section 5.5), not written per dataset.
+- Column knowledge comes from the profile made at ingest, so the query path has no hardcoded column names or operation lists.
 
 ### 3.3 Shared state
 
@@ -116,7 +101,8 @@ Every node calls `emit_trace(state, node, step_type, content)` with `step_type` 
 ### 3.5 Failure handling
 
 - **Built:** each dataset loads in its own try/except, so one failure doesn't stop the others; a failed live API call falls back to the cached file and is tagged `file_fallback` in the trace; any graph exception ends the run with status `failed`, and a partial result is still saved; no matching dataset gives status `partial` with an honest explanation.
-- **Planned:** plan-check retries, quality-review routing (3.2), automatic LLM provider fallback (4.2).
+- **Built:** gate-rejected or failing SQL is returned to the planner as an observation; the planner can decline (`cannot_answer`) and the run ends `partial` with the reason.
+- **Planned:** quality-review routing (3.2), automatic LLM provider fallback (4.2).
 
 ## 4. LLM providers
 
@@ -149,7 +135,7 @@ The files are curated mock data derived from public downloads. Details and known
 
 `backend/data/manifest.yaml` catalogs every dataset with **metadata only**: `id`, `source`, `title`, `topic`, `mode` (`file` | `api`), `file_path`, `format`, `sheet_name`, `resource_id`, `api_fallback`, `group` (files that form one view), `year` (for files with no year column). The coordinator reads it to choose datasets.
 
-Older entries still carry per-dataset rules (`column_meta`, `default_slice`) read by the pandas analytics path; they go away when the SQL planner replaces it. New datasets need none of them.
+`column_meta` is optional and holds only units and descriptions; there are no per-dataset data rules.
 
 **Source mode is a property of the dataset, not a per-query switch.** `api` mode is only for pre-vetted data.gov.sg `resource_id`s.
 
@@ -157,7 +143,7 @@ Older entries still carry per-dataset rules (`column_meta`, `default_slice`) rea
 
 - **Parsers:** `csv_parser.py` (pandas; digit strings with a leading zero stay text, e.g. postal codes); `excel_parser.py` (openpyxl, built for the MOM F2 layout); `api_client.py` (data.gov.sg Datastore Search, pagination, 2 attempts with timeout).
 - **Missing values:** `-`, `na`, `N.A.` and similar become missing, never 0.
-- **Shared cleaning** (`app/data/cleaning.py`): adds `year` from the manifest where a file has none; still applies the legacy `min_year` / `default_slice` rules for the pandas analytics path.
+- **Cleaning at ingest** (`app/data/cleaning.py`): adds `year` from the manifest where a file has none.
 
 ### 5.4 Seeding and typed views
 
@@ -168,8 +154,6 @@ On startup the backend runs Alembic migrations, then `scripts/seed_datasets.py`:
 3. **Views:** the `data` schema is dropped and rebuilt: one typed view per dataset (real `integer` / `double precision` / `text` columns), files sharing a `group` combined with `UNION ALL`, plus a `<view>_totals` view (additive measures summed per period) where there is something to sum.
 
 Views are derived, so rebuilding them loses nothing. One generic table avoids a table per CSV. Reading through a JSON view is 2-7x slower than a typed table (about 1 ms at current sizes); materialized views close the gap past ~100k rows.
-
-Today the query path still reads the files; the SQL planner will query the views.
 
 **Known issue:** the stored file path is absolute and isn't rewritten when only the environment changes (Docker vs. host).
 
@@ -192,7 +176,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 | Table | Purpose | In use? |
 |---|---|---|
 | `datasets` | Catalog row per dataset: source, mode, file path, content hash, `quality_report` (incl. profiler version) and `schema_profile` (JSON, incl. inferred structure) | Yes |
-| `dataset_records` | Every cleaned source row as a JSONB document; read through the generated views in the `data` schema | Written by seeding; to be queried by the SQL planner |
+| `dataset_records` | Every cleaned source row as a JSONB document; read through the generated views in the `data` schema | Written by seeding; read by the SQL planner through the views |
 | `analysis_runs` | One per query: text, status, provider, report | Yes; `session_id`, `query_hash`, `chart_specs`, `token_usage`, `estimated_cost_usd` columns reserved for planned features |
 | `analysis_run_datasets` | Which datasets a run used | Yes |
 | `agent_traces` | Persisted trace events | Yes |

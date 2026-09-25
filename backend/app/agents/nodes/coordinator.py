@@ -55,9 +55,7 @@ async def coordinator_node(state: AgentState) -> AgentState:
     )
 
     result: CoordinatorPlan = await model.ainvoke(prompt)
-    state["plan"] = [
-        {"dataset_id": s.dataset_id, "reason": s.reason} for s in result.steps
-    ]
+    state["plan"] = [{"dataset_id": s.dataset_id, "reason": s.reason} for s in result.steps]
 
     if not state["plan"]:
         state["errors"].append(

@@ -26,18 +26,15 @@ datasets:
     format: csv
     topic: [education, graduate employment, salary, university]
     column_meta:
-      year: {type: int}
-      university: {type: category}
-      school: {type: category}
-      degree: {type: category, description: "May carry footnote markers (**, #); not yet stripped"}
-      employment_rate_overall: {type: numeric, unit: percent, additive: false}
-      employment_rate_ft_perm: {type: numeric, unit: percent, additive: false}
-      basic_monthly_mean: {type: numeric, unit: sgd, additive: false}
-      basic_monthly_median: {type: numeric, unit: sgd, additive: false}
-      gross_monthly_mean: {type: numeric, unit: sgd, additive: false}
-      gross_monthly_median: {type: numeric, unit: sgd, additive: false}
-      gross_mthly_25_percentile: {type: numeric, unit: sgd, additive: false}
-      gross_mthly_75_percentile: {type: numeric, unit: sgd, additive: false}
+      degree: {description: "May carry footnote markers (**, #); not yet stripped"}
+      employment_rate_overall: {unit: percent}
+      employment_rate_ft_perm: {unit: percent}
+      basic_monthly_mean: {unit: sgd}
+      basic_monthly_median: {unit: sgd}
+      gross_monthly_mean: {unit: sgd}
+      gross_monthly_median: {unit: sgd}
+      gross_mthly_25_percentile: {unit: sgd}
+      gross_mthly_75_percentile: {unit: sgd}
 
   - id: mom_usual_hours_by_occupation_2023
     group: mom_usual_hours_by_occupation  # one file per year -> one combined view
@@ -51,12 +48,7 @@ datasets:
     topic: [employment, hours worked, occupation]
     year: 2023
     column_meta:
-      value: {type: numeric, unit: thousand persons, additive: true, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}
-    # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
-    default_slice:
-      sex: [Total]
-      hours_bucket: [Total]
-      occupation: [Total]
+      value: {unit: thousand persons, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}
 
   - id: mom_usual_hours_by_occupation_2024
     group: mom_usual_hours_by_occupation  # one file per year -> one combined view
@@ -70,12 +62,7 @@ datasets:
     topic: [employment, hours worked, occupation]
     year: 2024
     column_meta:
-      value: {type: numeric, unit: thousand persons, additive: true, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}
-    # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
-    default_slice:
-      sex: [Total]
-      hours_bucket: [Total]
-      occupation: [Total]
+      value: {unit: thousand persons, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}
 
   - id: mom_usual_hours_by_occupation_2025
     group: mom_usual_hours_by_occupation  # one file per year -> one combined view
@@ -89,9 +76,4 @@ datasets:
     topic: [employment, hours worked, occupation]
     year: 2025
     column_meta:
-      value: {type: numeric, unit: thousand persons, additive: true, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}
-    # Each column has a 'Total' row; 'More Than 48 Hours' overlaps the other hours buckets.
-    default_slice:
-      sex: [Total]
-      hours_bucket: [Total]
-      occupation: [Total]
+      value: {unit: thousand persons, description: "Employed residents aged 15+ (excl. full-time national servicemen), in thousands"}

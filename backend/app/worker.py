@@ -4,7 +4,7 @@ import uuid
 from saq import Queue
 
 from app.agents.graph import build_graph
-from app.agents.state import clear_dataframes, new_state
+from app.agents.state import new_state
 from app.agents.trace import trace_channel
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
@@ -40,9 +40,6 @@ async def run_query_task(ctx: dict, *, run_id: str, query_text: str) -> dict:
         except Exception as exc:  # noqa: BLE001 - unrecoverable graph failure, degrade gracefully
             final_state.setdefault("errors", []).append({"node_name": "graph", "message": str(exc)})
             final_state["status"] = "failed"
-        finally:
-            clear_dataframes(run_id)
-
         run, _ = await persist_run(session, run_uuid, query_text, final_state)
 
     await redis.publish(channel, "__done__")
