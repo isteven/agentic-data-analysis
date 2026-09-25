@@ -5,7 +5,7 @@ import { AgentTrace } from "@/components/AgentTrace";
 import { Markdown } from "@/components/Markdown";
 import { hasChart, ResultChart } from "@/components/ResultChart";
 import { ResultTable } from "@/components/ResultTable";
-import { exportSvgAsPdf, exportTableAsCsv } from "@/lib/export";
+import { exportChartAsPdf, exportChartAsPng, exportTableAsCsv } from "@/lib/export";
 import type { ChatTurn, QueryResponse } from "@/lib/types";
 
 /** A short, filesystem-safe name for downloads, derived from the question. */
@@ -55,12 +55,13 @@ export function ResultTabs({ query, result }: { query: string; result: QueryResp
   const baseName = slugify(query);
   if (tabs.length === 0) return null;
 
-  async function downloadChart() {
-    const svg = chartRef.current?.querySelector("svg");
-    if (!svg) return;
+  async function downloadChart(format: "png" | "pdf") {
+    const node = chartRef.current;
+    if (!node) return;
     setExporting(true);
     try {
-      await exportSvgAsPdf(svg, `${baseName}-chart.pdf`, query);
+      if (format === "png") await exportChartAsPng(node, `${baseName}-chart.png`);
+      else await exportChartAsPdf(node, `${baseName}-chart.pdf`, query);
     } catch (err) {
       console.error(`[DEBUG] ${new Date().toISOString()} chart export failed`, err);
     } finally {
@@ -92,13 +93,18 @@ export function ResultTabs({ query, result }: { query: string; result: QueryResp
           ))}
         </div>
         {active === "chart" && (
-          <button
-            onClick={downloadChart}
-            disabled={exporting}
-            className="shrink-0 whitespace-nowrap text-xs font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-40 dark:hover:text-zinc-200"
-          >
-            {exporting ? "Exporting…" : "Export PDF"}
-          </button>
+          <div className="flex shrink-0 gap-3">
+            {(["png", "pdf"] as const).map((format) => (
+              <button
+                key={format}
+                onClick={() => downloadChart(format)}
+                disabled={exporting}
+                className="whitespace-nowrap text-xs font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-40 dark:hover:text-zinc-200"
+              >
+                {exporting ? "Exporting…" : `Export ${format.toUpperCase()}`}
+              </button>
+            ))}
+          </div>
         )}
         {active === "data" && result.analysis && (
           <button
