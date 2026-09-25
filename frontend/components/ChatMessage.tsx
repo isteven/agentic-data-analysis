@@ -46,7 +46,10 @@ function availableTabs(result: QueryResponse): Tab[] {
 /** Exported for reuse on the history detail view, outside the chat-bubble layout. */
 export function ResultTabs({ query, result }: { query: string; result: QueryResponse }) {
   const tabs = availableTabs(result);
-  const [active, setActive] = useState<TabId | undefined>(tabs[0]?.id);
+  // Chart first when there is one (the visual answer), else the report.
+  const [active, setActive] = useState<TabId | undefined>(
+    tabs.find((t) => t.id === "chart")?.id ?? tabs.find((t) => t.id === "report")?.id ?? tabs[0]?.id,
+  );
   const [exporting, setExporting] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
   const baseName = slugify(query);
