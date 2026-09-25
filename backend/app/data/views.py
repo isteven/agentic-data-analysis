@@ -8,6 +8,7 @@ SQL generation queries these views, never the JSON directly.
 
 import re
 import uuid
+from dataclasses import dataclass, field
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,41 +38,37 @@ def _quote_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def _rule_where_clauses(profile: list[dict], rules: dict | None) -> list[str]:
-    """`default_slice` (keep-only) and `exclude_values` (drop) manifest rules, turned into
-    SQL predicates on the raw JSONB text value (applied before the role cast, so it works
-    the same regardless of column type). Every rule column must exist in the profile -
-    this is a manifest/profile mismatch, not a bad query, so it fails loudly."""
-    if not rules:
-        return []
+def _exclusion_clauses(profile: list[dict], exclude_values: dict | None) -> list[str]:
+    """Drop total rows and overlapping buckets (manifest `exclude_values`) so every row
+    left in the view is safe to add up. Filters the raw JSON value: Postgres can't refer
+    to SELECT aliases in WHERE. Rows with no value in that column are kept - a bare
+    NOT IN would silently drop them."""
     columns = {c["column"] for c in profile}
     clauses = []
-    for column, values in (rules.get("default_slice") or {}).items():
-        if column not in columns:
-            raise ValueError(f"default_slice column '{column}' is not in this dataset's profile")
-        literals = ", ".join(_quote_literal(v) for v in values)
-        clauses.append(f"{_quote_identifier(column)} IN ({literals})")
-    for column, values in (rules.get("exclude_values") or {}).items():
+    for column, values in (exclude_values or {}).items():
         if column not in columns:
             raise ValueError(f"exclude_values column '{column}' is not in this dataset's profile")
+        raw = f"(record->>{_quote_literal(column)})"
         literals = ", ".join(_quote_literal(v) for v in values)
-        clauses.append(f"{_quote_identifier(column)} NOT IN ({literals})")
+        clauses.append(f"({raw} IS NULL OR {raw} NOT IN ({literals}))")
     return clauses
 
 
-def _member_select(dataset_id: str, profile: list[dict], rules: dict | None) -> str:
+def _member_select(dataset_id: str, profile: list[dict], exclude_values: dict | None) -> str:
     dataset_id = str(uuid.UUID(dataset_id))  # raises ValueError if not a UUID
     columns = ",\n    ".join(
         f"(record->>{_quote_literal(c['column'])})::{_CASTS[c['role']]} "
         f"AS {_quote_identifier(c['column'])}"
         for c in profile
     )
-    where = " AND ".join([f"dataset_id = '{dataset_id}'", *_rule_where_clauses(profile, rules)])
+    where = "\n  AND ".join(
+        [f"dataset_id = '{dataset_id}'", *_exclusion_clauses(profile, exclude_values)]
+    )
     return f"SELECT\n    {columns}\nFROM dataset_records\nWHERE {where}"
 
 
 def build_typed_view_sql(
-    view_name: str, members: list[tuple[str, list[dict]]], rules: dict | None = None
+    view_name: str, members: list[tuple[str, list[dict]]], exclude_values: dict | None = None
 ) -> str:
     if not _IDENTIFIER.match(view_name):
         raise ValueError(f"'{view_name}' is not a safe view name")
@@ -87,7 +84,7 @@ def build_typed_view_sql(
         (dataset_id, sorted(profile, key=lambda c: first_columns.index(c["column"])))
         for dataset_id, profile in members
     ]
-    body = "\nUNION ALL\n".join(_member_select(d, p, rules) for d, p in ordered)
+    body = "\nUNION ALL\n".join(_member_select(d, p, exclude_values) for d, p in ordered)
     return f"CREATE VIEW {VIEW_SCHEMA}.{view_name} AS\n{body}"
 
 
@@ -115,15 +112,34 @@ def build_totals_view_sql(view_name: str, base_view_name: str, profile: list[dic
     )
 
 
-def _rules_for(entry: dict) -> dict:
-    return {
-        k: v
-        for k, v in {
-            "default_slice": entry.get("default_slice"),
-            "exclude_values": entry.get("exclude_values"),
-        }.items()
-        if v
-    }
+@dataclass
+class ViewPlan:
+    members: list[tuple[str, list[dict]]] = field(default_factory=list)
+    exclude_values: dict = field(default_factory=dict)
+
+
+def plan_views(manifest: list[dict], datasets_by_key: dict) -> dict[str, ViewPlan]:
+    """Which views to build, from the manifest and the seeded datasets. Only
+    `exclude_values` shapes a view; `default_slice` is deliberately ignored - it means
+    "when the query doesn't filter this column", which a fixed view can't express."""
+    plans: dict[str, ViewPlan] = {}
+    for entry in manifest:
+        dataset = datasets_by_key.get(entry["id"])
+        if dataset is None or not dataset.schema_profile:
+            continue
+        view_name = view_name_for(entry)
+        exclude_values = entry.get("exclude_values") or {}
+        plan = plans.get(view_name)
+        if plan is None:
+            plan = plans[view_name] = ViewPlan(exclude_values=exclude_values)
+        elif plan.exclude_values != exclude_values:
+            # One view, one set of rules: members declaring different ones is a manifest bug
+            raise ValueError(
+                f"Datasets in view '{view_name}' declare different exclude_values; "
+                f"'{entry['id']}' differs from the first member"
+            )
+        plan.members.append((str(dataset.id), dataset.schema_profile))
+    return plans
 
 
 async def rebuild_views(session: AsyncSession, manifest: list[dict]) -> list[str]:
@@ -131,27 +147,16 @@ async def rebuild_views(session: AsyncSession, manifest: list[dict]) -> list[str
     generated totals-per-time-period view per typed view. The schema holds only generated
     views, so dropping it loses nothing."""
     datasets = {d.dataset_key: d for d in (await session.scalars(select(Dataset))).all()}
-    members: dict[str, list[tuple[str, list[dict]]]] = {}
-    rules_by_view: dict[str, dict] = {}
-    for entry in manifest:
-        dataset = datasets.get(entry["id"])
-        if dataset is None or not dataset.schema_profile:
-            continue
-        view_name = view_name_for(entry)
-        members.setdefault(view_name, []).append((str(dataset.id), dataset.schema_profile))
-        # Grouped datasets (e.g. one MOM file per year) share one view and must declare
-        # the same rules, since the rules apply to the combined view, not a single member.
-        entry_rules = _rules_for(entry)
-        if entry_rules:
-            rules_by_view.setdefault(view_name, entry_rules)
+    plans = plan_views(manifest, datasets)
 
     await session.execute(text(f"DROP SCHEMA IF EXISTS {VIEW_SCHEMA} CASCADE"))
     await session.execute(text(f"CREATE SCHEMA {VIEW_SCHEMA}"))
-    for view_name, view_members in members.items():
-        rules = rules_by_view.get(view_name)
-        await session.execute(text(build_typed_view_sql(view_name, view_members, rules)))
-        profile = view_members[0][1]
+    for view_name, plan in plans.items():
+        await session.execute(
+            text(build_typed_view_sql(view_name, plan.members, plan.exclude_values))
+        )
+        profile = plan.members[0][1]
         if any(c["role"] == "time" for c in profile):
             totals_view = f"{view_name}_totals"
             await session.execute(text(build_totals_view_sql(totals_view, view_name, profile)))
-    return sorted(members)
+    return sorted(plans)

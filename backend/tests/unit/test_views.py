@@ -1,6 +1,8 @@
+from types import SimpleNamespace
+
 import pytest
 
-from app.data.views import build_totals_view_sql, build_typed_view_sql, view_name_for
+from app.data.views import build_totals_view_sql, build_typed_view_sql, plan_views, view_name_for
 
 DATASET_A = "11111111-1111-1111-1111-111111111111"
 DATASET_B = "22222222-2222-2222-2222-222222222222"
@@ -71,45 +73,106 @@ def test_dataset_id_must_be_a_uuid():
         build_typed_view_sql("x", [("not-a-uuid'; drop", PROFILE)])
 
 
-# --- rule-carrying views: total rows, overlapping values, default_slice ------------
+# --- exclude_values: total rows and overlapping buckets never reach the view --------
 
 
-def test_default_slice_keeps_only_the_listed_values():
-    rules = {"default_slice": {"industry": ["manufacturing", "construction"]}}
+def test_exclude_values_filters_on_the_raw_record_not_the_select_alias():
+    # Postgres can't see SELECT aliases in WHERE; filtering on "sex" would fail at CREATE VIEW
+    exclude = {"sex": ["Total"], "hours_bucket": ["Total", "More Than 48 Hours"]}
 
-    sql = build_typed_view_sql("retrenchment_by_industry", [(DATASET_A, PROFILE)], rules)
+    sql = build_typed_view_sql("mom_usual_hours", [(DATASET_A, MOM_PROFILE)], exclude)
 
-    assert "\"industry\" IN ('manufacturing', 'construction')" in sql
-
-
-def test_exclude_values_removes_totals_and_overlaps():
-    rules = {"exclude_values": {"sex": ["Total"], "hours_bucket": ["Total", "More Than 48 Hours"]}}
-
-    sql = build_typed_view_sql("mom_usual_hours", [(DATASET_A, MOM_PROFILE)], rules)
-
-    assert "\"sex\" NOT IN ('Total')" in sql
-    assert "\"hours_bucket\" NOT IN ('Total', 'More Than 48 Hours')" in sql
+    assert "(record->>'sex') NOT IN ('Total')" in sql
+    assert "(record->>'hours_bucket') NOT IN ('Total', 'More Than 48 Hours')" in sql
+    assert 'AND "sex"' not in sql
 
 
-def test_no_rules_means_no_where_clause():
+def test_exclude_values_keeps_rows_with_a_missing_value():
+    sql = build_typed_view_sql("x", [(DATASET_A, MOM_PROFILE)], {"sex": ["Total"]})
+
+    assert "(record->>'sex') IS NULL OR" in sql
+
+
+def test_exclude_values_apply_to_every_group_member():
+    sql = build_typed_view_sql(
+        "mom_usual_hours", [(DATASET_A, MOM_PROFILE), (DATASET_B, MOM_PROFILE)], {"sex": ["Total"]}
+    )
+
+    assert sql.count("NOT IN ('Total')") == 2
+
+
+def test_no_exclusions_means_only_the_dataset_filter():
     sql = build_typed_view_sql("retrenchment_by_industry", [(DATASET_A, PROFILE)])
 
-    assert "AND" not in sql  # only the dataset_id filter, no rule predicates appended
+    assert "AND" not in sql
 
 
-def test_rule_values_are_escaped():
-    rules = {"exclude_values": {"industry": ["o'brien"]}}
-
-    sql = build_typed_view_sql("x", [(DATASET_A, PROFILE)], rules)
+def test_excluded_values_are_escaped():
+    sql = build_typed_view_sql("x", [(DATASET_A, PROFILE)], {"industry": ["o'brien"]})
 
     assert "'o''brien'" in sql
 
 
-def test_rule_column_must_exist_in_profile():
-    rules = {"default_slice": {"not_a_column": ["x"]}}
-
+def test_excluded_column_must_exist_in_profile():
     with pytest.raises(ValueError, match="not_a_column"):
-        build_typed_view_sql("x", [(DATASET_A, PROFILE)], rules)
+        build_typed_view_sql("x", [(DATASET_A, PROFILE)], {"not_a_column": ["x"]})
+
+
+# --- planning views from the manifest -----------------------------------------------
+
+
+def _dataset(dataset_id, profile):
+    return SimpleNamespace(id=dataset_id, schema_profile=profile)
+
+
+def test_views_ignore_default_slice():
+    # default_slice is a "when the query doesn't filter this column" rule for the pandas
+    # path; baked into a view it would hide every non-Total MOM row permanently.
+    manifest = [{"id": "mom_2024", "default_slice": {"sex": ["Total"]}}]
+
+    plans = plan_views(manifest, {"mom_2024": _dataset(DATASET_A, MOM_PROFILE)})
+
+    assert plans["mom_2024"].exclude_values == {}
+
+
+def test_group_members_share_one_view_with_their_exclusions():
+    exclude = {"sex": ["Total"]}
+    manifest = [
+        {"id": "mom_2023", "group": "mom", "exclude_values": exclude},
+        {"id": "mom_2024", "group": "mom", "exclude_values": exclude},
+    ]
+    datasets = {
+        "mom_2023": _dataset(DATASET_A, MOM_PROFILE),
+        "mom_2024": _dataset(DATASET_B, MOM_PROFILE),
+    }
+
+    plans = plan_views(manifest, datasets)
+
+    assert list(plans) == ["mom"]
+    assert [m[0] for m in plans["mom"].members] == [DATASET_A, DATASET_B]
+    assert plans["mom"].exclude_values == exclude
+
+
+def test_group_members_must_declare_the_same_exclusions():
+    manifest = [
+        {"id": "mom_2023", "group": "mom", "exclude_values": {"sex": ["Total"]}},
+        {"id": "mom_2024", "group": "mom"},
+    ]
+    datasets = {
+        "mom_2023": _dataset(DATASET_A, MOM_PROFILE),
+        "mom_2024": _dataset(DATASET_B, MOM_PROFILE),
+    }
+
+    with pytest.raises(ValueError, match="exclude_values"):
+        plan_views(manifest, datasets)
+
+
+def test_unseeded_or_unprofiled_datasets_get_no_view():
+    manifest = [{"id": "a"}, {"id": "b"}]
+
+    plans = plan_views(manifest, {"b": _dataset(DATASET_B, None)})
+
+    assert plans == {}
 
 
 # --- generated totals-per-time-period view -----------------------------------------
