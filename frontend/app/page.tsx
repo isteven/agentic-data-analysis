@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { Composer } from "@/components/Composer";
+import { HistorySidebar } from "@/components/HistorySidebar";
 import { API_URL, submitQuery, watchRun } from "@/lib/runs";
 import type { ChatTurn, ProvidersInfo } from "@/lib/types";
 
@@ -21,6 +21,8 @@ export default function Home() {
   const [provider, setProvider] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const busy = turns.some((t) => t.pending);
+  // Bumped whenever a turn finishes, so the sidebar re-fetches and shows the new entry.
+  const completedCount = turns.filter((t) => t.result || t.error).length;
 
   useEffect(() => {
     fetch(`${API_URL}/api/health/providers`)
@@ -57,18 +59,14 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white dark:bg-zinc-950">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          Policy Data Analytics
-        </h1>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/history"
-            className="rounded-lg border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            History
-          </Link>
+    <div className="flex h-screen bg-white dark:bg-zinc-950">
+      <HistorySidebar refreshKey={completedCount} />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Policy Data Analytics
+          </h1>
           {turns.length > 0 && (
             <button
               onClick={() => setTurns([])}
@@ -78,53 +76,53 @@ export default function Home() {
               New chat
             </button>
           )}
-        </div>
-      </header>
+        </header>
 
-      <main className="flex-1 overflow-y-auto">
-        {turns.length === 0 ? (
-          <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4">
-            <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-              What would you like to analyse?
-            </h2>
-            <p className="mt-2 text-sm text-zinc-500">
-              Singapore government datasets from data.gov.sg and MOM.
-            </p>
-            <div className="mt-8 grid w-full gap-2 sm:grid-cols-2">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => ask(s)}
-                  className="rounded-xl border border-zinc-200 px-4 py-3 text-left text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                >
-                  {s}
-                </button>
-              ))}
+        <main className="flex-1 overflow-y-auto">
+          {turns.length === 0 ? (
+            <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4">
+              <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+                What would you like to analyse?
+              </h2>
+              <p className="mt-2 text-sm text-zinc-500">
+                Singapore government datasets from data.gov.sg and MOM.
+              </p>
+              <div className="mt-8 grid w-full gap-2 sm:grid-cols-2">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => ask(s)}
+                    className="rounded-xl border border-zinc-200 px-4 py-3 text-left text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="mx-auto max-w-3xl space-y-10 px-4 py-8">
-            {turns.map((t) => (
-              <ChatMessage key={t.id} turn={t} />
-            ))}
-            <div ref={bottomRef} />
-          </div>
-        )}
-      </main>
+          ) : (
+            <div className="mx-auto max-w-3xl space-y-10 px-4 py-8">
+              {turns.map((t) => (
+                <ChatMessage key={t.id} turn={t} />
+              ))}
+              <div ref={bottomRef} />
+            </div>
+          )}
+        </main>
 
-      <div className="mx-auto w-full max-w-3xl px-4 pb-4">
-        <Composer
-          value={draft}
-          onChange={setDraft}
-          onSubmit={() => ask(draft.trim())}
-          disabled={busy}
-          providers={providers}
-          provider={provider}
-          onProviderChange={setProvider}
-        />
-        <p className="mt-2 text-center text-xs text-zinc-400">
-          Every number is computed by the database and checked against the report.
-        </p>
+        <div className="mx-auto w-full max-w-3xl px-4 pb-4">
+          <Composer
+            value={draft}
+            onChange={setDraft}
+            onSubmit={() => ask(draft.trim())}
+            disabled={busy}
+            providers={providers}
+            provider={provider}
+            onProviderChange={setProvider}
+          />
+          <p className="mt-2 text-center text-xs text-zinc-400">
+            Every number is computed by the database and checked against the report.
+          </p>
+        </div>
       </div>
     </div>
   );
