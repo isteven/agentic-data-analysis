@@ -39,6 +39,7 @@ class Analysis(BaseModel):
 
 class QueryResponse(BaseModel):
     run_id: str
+    query_text: str
     status: str
     provider_used: str | None = None  # e.g. "openai", or "openai->bedrock" after a fallback
     report_markdown: str | None = None

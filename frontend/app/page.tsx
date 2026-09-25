@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { Composer } from "@/components/Composer";
@@ -61,15 +62,23 @@ export default function Home() {
         <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
           Policy Data Analytics
         </h1>
-        {turns.length > 0 && (
-          <button
-            onClick={() => setTurns([])}
-            disabled={busy}
-            className="rounded-lg border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        <div className="flex items-center gap-2">
+          <Link
+            href="/history"
+            className="rounded-lg border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
-            New chat
-          </button>
-        )}
+            History
+          </Link>
+          {turns.length > 0 && (
+            <button
+              onClick={() => setTurns([])}
+              disabled={busy}
+              className="rounded-lg border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              New chat
+            </button>
+          )}
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto">

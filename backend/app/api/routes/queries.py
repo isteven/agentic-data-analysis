@@ -14,6 +14,7 @@ router = APIRouter()
 def _to_response(run, trace_events: list[dict]) -> QueryResponse:
     return QueryResponse(
         run_id=str(run.id),
+        query_text=run.query_text,
         status=run.status,
         provider_used=run.provider_used,
         report_markdown=run.report_markdown,

@@ -1,11 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AgentTrace } from "@/components/AgentTrace";
 import { Markdown } from "@/components/Markdown";
 import { hasChart, ResultChart } from "@/components/ResultChart";
 import { ResultTable } from "@/components/ResultTable";
+import { exportSvgAsPdf, exportTableAsCsv } from "@/lib/export";
 import type { ChatTurn, QueryResponse } from "@/lib/types";
+
+/** A short, filesystem-safe name for downloads, derived from the question. */
+function slugify(text: string): string {
+  return (
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "analysis"
+  );
+}
 
 const STATUS_NOTES: Record<string, string> = {
   partial: "Partial answer — see the agent steps for what could not be answered.",
@@ -31,37 +43,73 @@ function availableTabs(result: QueryResponse): Tab[] {
   return tabs;
 }
 
-function ResultTabs({ result }: { result: QueryResponse }) {
+/** Exported for reuse on the history detail view, outside the chat-bubble layout. */
+export function ResultTabs({ query, result }: { query: string; result: QueryResponse }) {
   const tabs = availableTabs(result);
   const [active, setActive] = useState<TabId | undefined>(tabs[0]?.id);
+  const [exporting, setExporting] = useState(false);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const baseName = slugify(query);
   if (tabs.length === 0) return null;
+
+  async function downloadChart() {
+    const svg = chartRef.current?.querySelector("svg");
+    if (!svg) return;
+    setExporting(true);
+    try {
+      await exportSvgAsPdf(svg, `${baseName}-chart.pdf`, query);
+    } catch (err) {
+      console.error(`[DEBUG] ${new Date().toISOString()} chart export failed`, err);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div>
-      <div
-        role="tablist"
-        className="flex h-10 items-stretch gap-1 overflow-x-auto overflow-y-hidden border-b border-zinc-200 dark:border-zinc-800"
-      >
-        {tabs.map((tab) => (
+      <div className="flex items-center justify-between">
+        <div
+          role="tablist"
+          className="flex h-10 items-stretch gap-1 overflow-x-auto overflow-y-hidden border-b border-zinc-200 dark:border-zinc-800"
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={active === tab.id}
+              onClick={() => setActive(tab.id)}
+              className={`-mb-px flex shrink-0 items-center whitespace-nowrap border-b-2 px-3 text-sm font-medium leading-none ${
+                active === tab.id
+                  ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
+                  : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {active === "chart" && (
           <button
-            key={tab.id}
-            role="tab"
-            aria-selected={active === tab.id}
-            onClick={() => setActive(tab.id)}
-            className={`-mb-px flex shrink-0 items-center whitespace-nowrap border-b-2 px-3 text-sm font-medium leading-none ${
-              active === tab.id
-                ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
-                : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-            }`}
+            onClick={downloadChart}
+            disabled={exporting}
+            className="shrink-0 whitespace-nowrap text-xs font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-40 dark:hover:text-zinc-200"
           >
-            {tab.label}
+            {exporting ? "Exporting…" : "Export PDF"}
           </button>
-        ))}
+        )}
+        {active === "data" && result.analysis && (
+          <button
+            onClick={() => exportTableAsCsv(result.analysis!, `${baseName}-data.csv`)}
+            className="shrink-0 whitespace-nowrap text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+          >
+            Export CSV
+          </button>
+        )}
       </div>
       <div role="tabpanel" className="pt-4">
         {active === "report" && result.report_markdown && <Markdown>{result.report_markdown}</Markdown>}
         {active === "steps" && <AgentTrace steps={result.trace} />}
-        {active === "chart" && result.analysis && <ResultChart analysis={result.analysis} />}
+        {active === "chart" && result.analysis && <ResultChart ref={chartRef} analysis={result.analysis} />}
         {active === "data" && result.analysis && <ResultTable analysis={result.analysis} />}
       </div>
     </div>
@@ -103,7 +151,7 @@ export function ChatMessage({ turn }: { turn: ChatTurn }) {
                   {STATUS_NOTES[turn.result.status]}
                 </p>
               )}
-              <ResultTabs result={turn.result} />
+              <ResultTabs query={turn.query} result={turn.result} />
               {turn.result.provider_used && (
                 <p className="mt-3 text-xs text-zinc-400">
                   {turn.result.provider_used.includes("->")
