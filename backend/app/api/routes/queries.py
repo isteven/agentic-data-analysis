@@ -13,7 +13,7 @@ async def submit_query(
     body: QueryRequest,
     session: AsyncSession = Depends(get_session),
 ) -> QueryResponse:
-    run, trace_events = await run_query(session, body.query)
+    run, trace_events = await run_query(session, body.query, body.provider)
     return QueryResponse(
         run_id=str(run.id),
         status=run.status,

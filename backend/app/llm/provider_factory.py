@@ -1,31 +1,116 @@
-from typing import Literal
+import logging
+from collections.abc import Callable
+from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.runnables import Runnable
 
 from app.core.config import get_settings
 from app.llm.config import ProviderName
 
+logger = logging.getLogger(__name__)
+
+Tier = Literal["fast", "quality"]
+# (failed provider, provider retried on, the error) -> None
+FallbackHook = Callable[[str, str, Exception], None]
+
 
 def get_chat_model(
     provider: ProviderName | None = None,
-    model_tier: Literal["fast", "quality"] = "quality",
-) -> BaseChatModel:
+    model_tier: Tier = "quality",
+    on_fallback: FallbackHook | None = None,
+) -> "FallbackChatModel":
+    """The requested (or default) provider, backed by the fallback provider when configured.
+
+    Providers that aren't configured are skipped, so a missing OpenAI key alone
+    still gives a working model if Bedrock is set up, and vice versa.
+    """
     settings = get_settings()
-    resolved = provider or ProviderName(settings.llm_default_provider)
+    order = [provider or ProviderName(settings.llm_default_provider)]
+    fallback = ProviderName(settings.llm_fallback_provider)
+    if fallback not in order:
+        order.append(fallback)
 
-    if resolved == ProviderName.OPENAI:
+    models: list[tuple[str, BaseChatModel]] = []
+    skipped: list[str] = []
+    for name in order:
+        try:
+            models.append((name.value, build_provider(name, model_tier)))
+        except RuntimeError as e:
+            skipped.append(f"{name.value}: {e}")
+    if not models:
+        raise RuntimeError("No LLM provider is configured. " + " ".join(skipped))
+    if skipped:
+        logger.info("LLM providers skipped (not configured): %s", "; ".join(skipped))
+    return FallbackChatModel(models, on_fallback)
+
+
+def build_provider(provider: ProviderName, model_tier: Tier) -> BaseChatModel:
+    settings = get_settings()
+    if provider == ProviderName.OPENAI:
         return _build_openai(settings, model_tier)
-
-    if resolved == ProviderName.BEDROCK:
+    if provider == ProviderName.BEDROCK:
         return _build_bedrock(settings, model_tier)
-
-    if resolved in (ProviderName.AZURE_OPENAI, ProviderName.VERTEX_AI):
-        raise NotImplementedError(f"Provider '{resolved}' not yet implemented")
-
-    raise ValueError(f"Unknown provider: {resolved}")
+    if provider in (ProviderName.AZURE_OPENAI, ProviderName.VERTEX_AI):
+        raise NotImplementedError(f"Provider '{provider}' not yet implemented")
+    raise ValueError(f"Unknown provider: {provider}")
 
 
-def _build_openai(settings, model_tier: Literal["fast", "quality"]) -> BaseChatModel:
+class FallbackChatModel:
+    """Chat model that retries a failed call on the next provider.
+
+    Mirrors the parts of the chat-model API the agents use (`bind_tools`,
+    `with_structured_output`, `ainvoke`), so node code is unchanged. Hand-rolled
+    rather than LangChain's `.with_fallbacks()` because that doesn't say which
+    provider answered, and the switch should be visible in the agent trace.
+    """
+
+    def __init__(
+        self,
+        models: list[tuple[str, Runnable]],
+        on_fallback: FallbackHook | None = None,
+    ):
+        self._models = models
+        self._on_fallback = on_fallback
+
+    @property
+    def providers(self) -> list[str]:
+        return [name for name, _ in self._models]
+
+    def _derive(self, fn: Callable[[Any], Runnable]) -> "FallbackChatModel":
+        return FallbackChatModel([(n, fn(m)) for n, m in self._models], self._on_fallback)
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> "FallbackChatModel":
+        return self._derive(lambda m: m.bind_tools(tools, **kwargs))
+
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> "FallbackChatModel":
+        return self._derive(lambda m: m.with_structured_output(schema, **kwargs))
+
+    async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
+        last_error: Exception | None = None
+        for i, (name, model) in enumerate(self._models):
+            try:
+                return await model.ainvoke(input, config, **kwargs)
+            # Any provider error counts (auth, rate limit after the SDK's own retries,
+            # outage, malformed structured output): the other provider may still answer.
+            except Exception as e:  # noqa: BLE001 - see comment above
+                last_error = e
+                if i + 1 < len(self._models):
+                    next_name = self._models[i + 1][0]
+                    logger.warning(
+                        "LLM provider %s failed (%s: %s); retrying on %s",
+                        name,
+                        type(e).__name__,
+                        e,
+                        next_name,
+                    )
+                    if self._on_fallback:
+                        self._on_fallback(name, next_name, e)
+        assert last_error is not None
+        raise last_error
+
+
+def _build_openai(settings, model_tier: Tier) -> BaseChatModel:
     if not settings.openai_enabled:
         raise RuntimeError(
             "OpenAI provider requested but OPENAI_API_KEY is not set. "
@@ -39,7 +124,7 @@ def _build_openai(settings, model_tier: Literal["fast", "quality"]) -> BaseChatM
     )
 
 
-def _build_bedrock(settings, model_tier: Literal["fast", "quality"]) -> BaseChatModel:
+def _build_bedrock(settings, model_tier: Tier) -> BaseChatModel:
     if not settings.bedrock_enabled:
         raise RuntimeError(
             "Bedrock provider requested but LLM_ENABLE_BEDROCK is false or AWS credentials "
@@ -48,8 +133,21 @@ def _build_bedrock(settings, model_tier: Literal["fast", "quality"]) -> BaseChat
     from langchain_aws import ChatBedrockConverse
 
     model_id = (
-        settings.bedrock_model_id_fast if model_tier == "fast" else settings.bedrock_model_id_quality
+        settings.bedrock_model_id_fast
+        if model_tier == "fast"
+        else settings.bedrock_model_id_quality
     )
+    if not model_id:
+        raise RuntimeError(
+            f"Bedrock has no model id for the '{model_tier}' tier (BEDROCK_MODEL_ID_*)."
+        )
+    # Keys passed explicitly: pydantic-settings reads .env into settings, not os.environ,
+    # so boto's own lookup only finds them under Docker (env_file), not a local uv run.
     return ChatBedrockConverse(
-        model=model_id, region_name=settings.aws_region, temperature=settings.llm_temperature
+        model=model_id,
+        region_name=settings.aws_region,
+        temperature=settings.llm_temperature,
+        aws_access_key_id=settings.aws_access_key_id,
+        aws_secret_access_key=settings.aws_secret_access_key,
+        aws_session_token=settings.aws_session_token or None,
     )

@@ -43,7 +43,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 5 nodes; analytics is a ReAct SQL planner with gate-checked retries | Partial |
 | Async / queue | SAQ worker on Redis | `run_query_task` built and publishes trace events; not wired to any route | Partial |
 | Real-time trace | Redis pub/sub -> SSE | Trace returned once, after the run | Partial |
-| LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI only; Bedrock stubbed | Partial |
+| LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI + Bedrock via one factory; per-request provider and automatic fallback (traced); no UI picker yet | Partial |
 | Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
 | Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
 | Visualisations | Charts driven by backend chart specs | None | Planned |
@@ -102,7 +102,8 @@ Every node calls `emit_trace(state, node, step_type, content)` with `step_type` 
 
 - **Built:** each dataset loads in its own try/except, so one failure doesn't stop the others; a failed live API call falls back to the cached file and is tagged `file_fallback` in the trace; any graph exception ends the run with status `failed`, and a partial result is still saved; no matching dataset gives status `partial` with an honest explanation.
 - **Built:** gate-rejected or failing SQL is returned to the planner as an observation; the planner can decline (`cannot_answer`) and the run ends `partial` with the reason.
-- **Planned:** quality-review routing (3.2), automatic LLM provider fallback (4.2).
+- **Built:** automatic LLM provider fallback, per call (4.2).
+- **Planned:** quality-review routing (3.2).
 
 ## 4. LLM providers
 
@@ -110,13 +111,15 @@ Every node calls `emit_trace(state, node, step_type, content)` with `step_type` 
 
 All agent code gets a model from `get_chat_model(provider, model_tier)` in `backend/app/llm/provider_factory.py`; nothing imports a provider SDK directly. Two independent choices:
 
-- **Provider:** `openai` (built), `bedrock` (planned, `langchain_aws.ChatBedrockConverse`), `azure_openai` / `vertex_ai` (stubs).
+- **Provider:** `openai` and `bedrock` (`langchain_aws.ChatBedrockConverse`) built; `azure_openai` / `vertex_ai` stubs.
 - **Tier:** `fast` (coordinator) or `quality` (report writer), mapped to model ids in `.env`.
 
-### 4.2 Switching and fallback (planned)
+### 4.2 Switching and fallback
 
-- **User switching:** a provider picker in the query UI; resolution order is per-request choice -> environment default.
-- **Automatic fallback:** on transient, auth or connection errors, retry on the other provider (LangChain `.with_fallbacks()`), recorded as a trace event ("OpenAI failed, retried on Bedrock").
+- **Built -- per-request choice:** `POST /api/queries` takes an optional `provider`; otherwise `LLM_DEFAULT_PROVIDER`. Nodes get their model via `node_model(state, node, tier)` (`app/agents/llm.py`).
+- **Built -- automatic fallback:** `get_chat_model()` returns a `FallbackChatModel` holding the chosen provider, then `LLM_FALLBACK_PROVIDER`. Any error on a call (auth, outage, rate limit after the SDK's own retries, malformed structured output) retries that call on the next provider. The switch is a trace event ("LLM provider openai failed (AuthenticationError); retried on bedrock") and is stored in `analysis_runs.provider_used` (e.g. `openai->bedrock`). A provider that isn't configured is skipped, so either one alone still works.
+- **Why not LangChain `.with_fallbacks()`:** it doesn't report which provider answered, so the switch couldn't be traced. The wrapper mirrors `bind_tools` / `with_structured_output` / `ainvoke`, so node code is unchanged.
+- **Planned:** a provider picker in the chat UI.
 
 ## 5. Data layer
 

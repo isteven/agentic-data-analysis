@@ -14,13 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlglot import exp
 
 from app.agents.chart import build_chart_spec
+from app.agents.llm import node_model
 from app.agents.planner import run_planner
 from app.agents.state import AgentState
 from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
 from app.data.sql_runner import QueryResult, run_checked_sql
 from app.data.views import VIEW_SCHEMA, load_view_catalog
-from app.llm.provider_factory import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ async def analytics_node(
         question=state["query"],
         views=views,
         catalog=catalog,
-        model=get_chat_model(model_tier="fast"),
+        model=node_model(state, NODE_NAME, "fast"),
         run_sql_fn=partial(run_checked_sql, engine, catalog=catalog),
         trace=lambda kind, content: emit_trace(state, NODE_NAME, kind, content),
     )

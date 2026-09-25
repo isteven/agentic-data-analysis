@@ -15,7 +15,9 @@ settings = get_settings()
 queue = Queue.from_url(settings.redis_url, name="apda")
 
 
-async def run_query_task(ctx: dict, *, run_id: str, query_text: str) -> dict:
+async def run_query_task(
+    ctx: dict, *, run_id: str, query_text: str, provider: str | None = None
+) -> dict:
     """Runs the agent graph via astream (ARCHITECTURE.md §2.4), publishing each new
     trace event to Redis pub/sub as it appears rather than waiting for the full run
     to finish."""
@@ -25,7 +27,7 @@ async def run_query_task(ctx: dict, *, run_id: str, query_text: str) -> dict:
 
     async with AsyncSessionLocal() as session:
         graph = build_graph(session)
-        state = new_state(query=query_text, run_id=run_id)
+        state = new_state(query=query_text, run_id=run_id, provider=provider)
 
         seen = 0
         final_state = state
