@@ -46,6 +46,45 @@ jobs:
           name: backend-coverage
           path: backend/coverage.xml
 
+  integration:
+    name: Backend integration (real Postgres, scripted LLM)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16 # matches infra/docker-compose.yml
+        env:
+          POSTGRES_USER: apda
+          POSTGRES_PASSWORD: apda
+          POSTGRES_DB: apda_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U apda"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev --locked
+
+      - name: Integration tests
+        # Migrates and seeds the real dataset files, then checks view figures against
+        # the sources' published totals and runs the full agent graph with fake LLMs.
+        env:
+          PYTHONPATH: .
+          TEST_DATABASE_URL: postgresql+asyncpg://apda:apda@localhost:5432/apda_test
+        run: uv run pytest tests/integration -v
+
   frontend:
     name: Frontend (lint + typecheck + build)
     runs-on: ubuntu-latest
