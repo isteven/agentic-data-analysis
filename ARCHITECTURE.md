@@ -40,7 +40,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 |---|---|---|---|
 | Frontend | Next.js + TypeScript, Recharts, TanStack Query | Next.js + TypeScript: one query page with report, chart, data table and agent-trace panel | Partial |
 | Backend API | FastAPI: 202 + background run, SSE, history, export | FastAPI: `POST /api/queries` (202 + worker run), `GET /api/queries/{run_id}` (poll), health routes | Partial |
-| Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 5 nodes; analytics is a ReAct SQL planner with gate-checked retries | Partial |
+| Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 6 nodes; ReAct SQL planner with gate-checked retries; reviewer loop back to planner / report writer | Partial |
 | Async / queue | SAQ worker on Redis | `run_query_task` built, publishes trace events, and runs every query (`POST /api/queries` enqueues it); `worker` service in Compose | Built |
 | Real-time trace | Redis -> SSE | Worker writes each event to a Redis Stream as emitted; `GET /api/agent-trace/{run_id}` serves it as SSE; frontend not wired yet | Partial |
 | LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI + Bedrock via one factory; per-request provider and automatic fallback (traced); no UI picker yet | Partial |
@@ -58,7 +58,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 ### 3.1 Current pipeline (built)
 
 ```
-START -> coordinator -> extraction -> analytics (ReAct SQL planner) -> report_writer -> validator -> END
+START -> coordinator -> extraction -> analytics (ReAct SQL planner) -> report_writer -> validator -> reviewer -> END
                                           ^  describe / sample / run_sql  |
                                           +------ observe, retry ---------+
 ```
@@ -69,18 +69,21 @@ START -> coordinator -> extraction -> analytics (ReAct SQL planner) -> report_wr
 | **extraction** | No | Checks each chosen dataset is stored, maps it to its typed view, and traces the data-quality facts inferred at ingest (totals/overlaps excluded, unverified periods, summable measures) |
 | **analytics** | Yes (fast tier) | ReAct planner (`app/agents/planner.py`): tools `describe_view`, `sample_rows`, `run_sql`, then `submit_answer(sql, interpretation)` or `cannot_answer`. Max 8 tool calls. Every query goes through the SQL gate and read-only runner; a rejection is an observation the planner fixes. The submitted query's result becomes `Finding`s |
 | **report_writer** | Yes (quality tier) | Writes the report from the query result and findings only, stating how the question was interpreted and citing sources |
-| **validator** | No | Every number in the report must match a finding (1% tolerance); numbers from the question or result labels count as context. Appends a warning otherwise |
+| **validator** | No | Every number in the report must match a finding (1% tolerance); numbers from the question or result labels (cells or column names) count as context. Appends a warning otherwise |
+| **reviewer** | Yes (fast tier) | LLM judge of meaning, not arithmetic: sees the question, what each queried column means, the SQL, result and report. `pass`, `wrong_analysis` (back to analytics) or `poor_report` (back to report_writer), with the reason as feedback. Max 1 re-route; after that the answer keeps a visible caveat |
 
 **Safety of LLM-written SQL** (`app/data/sql_gate.py`, `sql_runner.py`): sqlglot allows one `SELECT` over `data` views only, known columns (with "did you mean" hints), no `SUM` over non-additive measures, no side-effect functions, and runs the SQL regenerated from the checked tree. Postgres then runs it in a `READ ONLY` transaction as the `NOLOGIN` role `data_reader` (SELECT on the views only), with a 5 s timeout and a 500-row cap. Each layer alone stops a write.
 
-**Still open** (from 3.2): intent rewriting, quality review with root-cause routing, units carried into findings.
+**Why the reviewer:** the validator proves the report matches the result, not that the result answers the question. Example caught live: "Which gender works longer?" was answered by averaging (then summing) a head-count column; the reviewer sent it back and the re-plan compared each sex across hours bands.
+
+**Still open** (from 3.2): intent rewriting; `wrong_datasets` routing back to the coordinator; units carried into findings.
 
 ### 3.2 Planned additions
 
 | Step | LLM? | Responsibility |
 |---|---|---|
 | Intent | Yes | Rewrite the question precisely ("layoff" -> retrenchment, "past 3 years" -> 2023-2025); reject questions the catalog can't answer |
-| Quality review | Yes | LLM judge after the number check: does the report answer the question, is anything misdescribed, were the right datasets used? Routes a failure back to the coordinator, planner or report writer |
+| Quality review | Yes | **Built** (planner + report writer routes, section 3.1); routing back to the coordinator for wrong datasets is not |
 
 **Principles:**
 - LLMs interpret the question, choose what to compute and judge the result; **the database computes every number**. No LLM ever re-types data.
@@ -106,7 +109,7 @@ Every node calls `emit_trace(state, node, step_type, content)` with `step_type` 
 - **Built:** each dataset loads in its own try/except, so one failure doesn't stop the others; a failed live API call falls back to the cached file and is tagged `file_fallback` in the trace; any graph exception ends the run with status `failed`, and a partial result is still saved; no matching dataset gives status `partial` with an honest explanation.
 - **Built:** gate-rejected or failing SQL is returned to the planner as an observation; the planner can decline (`cannot_answer`) and the run ends `partial` with the reason.
 - **Built:** automatic LLM provider fallback, per call (4.2).
-- **Planned:** quality-review routing (3.2).
+- **Built:** quality review sends a wrong analysis or a poor report back to the step that caused it, once; a second failure keeps the answer with a caveat.
 
 ## 4. LLM providers
 

@@ -51,9 +51,13 @@ def _is_grounded(value: float, known_values: list[float]) -> bool:
 
 def _context_numbers(state: AgentState) -> list[float]:
     """Numbers that describe what was asked rather than claim a value: those in the
-    question itself and inside the result's text labels (e.g. "60 Hours & Over")."""
+    question itself and inside the result's text labels (e.g. "60 Hours & Over") - in
+    cells, or in column names when the query pivoted the labels into columns."""
     numbers = _extract_numbers(state["query"])
-    for row in (state.get("analysis") or {}).get("rows", []):
+    analysis = state.get("analysis") or {}
+    for column in analysis.get("columns", []):
+        numbers += _extract_numbers(column)
+    for row in analysis.get("rows", []):
         for cell in row:
             if isinstance(cell, str):
                 numbers += _extract_numbers(cell)
