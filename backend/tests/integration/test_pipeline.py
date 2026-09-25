@@ -12,8 +12,9 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from app.agents import llm
-from app.agents.nodes import analytics, coordinator, report_writer, reviewer
+from app.agents.nodes import analytics, coordinator, intent, report_writer, reviewer
 from app.agents.nodes.coordinator import CoordinatorPlan, PlanStepOutput
+from app.agents.nodes.intent import Intent
 from app.agents.nodes.reviewer import Review
 from app.db.session import AsyncSessionLocal
 from app.llm.provider_factory import FallbackChatModel
@@ -84,16 +85,22 @@ def llms(monkeypatch):
     real_node_model = llm.node_model
 
     def fake_node_model(state, node_name, model_tier):
+        # Unless a test scripts it, the intent step passes the question through as-is.
+        models = scripts.get(node_name) or (
+            [("fake", Scripted(Intent(rewritten=state["query"], answerable=True)))]
+            if node_name == "intent"
+            else None
+        )
         monkeypatch.setattr(
             llm,
             "get_chat_model",
             lambda provider=None, tier=None, on_fallback=None: FallbackChatModel(
-                scripts[node_name], on_fallback
+                models, on_fallback
             ),
         )
         return real_node_model(state, node_name, model_tier)
 
-    for module in (coordinator, analytics, report_writer, reviewer):
+    for module in (intent, coordinator, analytics, report_writer, reviewer):
         monkeypatch.setattr(module, "node_model", fake_node_model)
     return scripts
 
@@ -118,7 +125,8 @@ async def test_happy_path_answers_from_the_database_and_persists(seeded_db, llms
     assert state["status"] == "completed"
     assert state["analysis"]["rows"] == [[2020, 14380]]  # computed by Postgres, not the LLM
     assert state["grounded"] is True
-    assert next(e["node_name"] for e in state["trace_events"]) == "coordinator"
+    nodes = list(dict.fromkeys(e["node_name"] for e in state["trace_events"]))
+    assert nodes[:3] == ["intent", "coordinator", "extraction"]
     assert trace_text(state, "reviewer")[-1].startswith("Passed")
 
     async with AsyncSessionLocal() as session:
@@ -206,3 +214,31 @@ async def test_no_relevant_dataset_ends_partial_not_crashed(seeded_db, llms):
 
     assert state["status"] == "partial"
     assert state["analysis"] is None
+
+
+async def test_intent_declines_what_no_dataset_covers_before_any_work(seeded_db, llms):
+    llms["intent"] = [
+        ("fake", Scripted(Intent(rewritten="", answerable=False, reason="No GDP data is available.")))
+    ]
+    # No script for coordinator/analytics/writer: reaching them would raise.
+
+    state = await run("What was Singapore's GDP growth in 2020?")
+
+    assert state["status"] == "partial"
+    assert [e["node_name"] for e in state["trace_events"]] == ["intent", "intent"]
+    assert "No GDP data is available." in state["report_markdown"]
+
+
+async def test_the_intent_rewrite_is_what_the_agents_work_on(seeded_db, llms):
+    precise = "How many employed residents were retrenched in 2020 (resident status only)?"
+    llms["intent"] = [("fake", Scripted(Intent(rewritten=precise, answerable=True)))]
+    llms["coordinator"] = [("fake", Scripted(plan("retrenchment_by_residential_status")))]
+    llms["analytics"] = [("fake", Scripted(submit(RESIDENTS_2020)))]
+    llms["report_writer"] = [("fake", Scripted(report("14,380 residents were retrenched in 2020.")))]
+    llms["reviewer"] = [("fake", Scripted(Review(verdict="pass", reason="ok")))]
+
+    state = await run("layoffs of locals in 2020?")
+
+    assert state["intent_query"] == precise
+    assert f"Interpreted as: {precise}" in trace_text(state, "intent")
+    assert state["query"] == "layoffs of locals in 2020?"  # the user's words are kept

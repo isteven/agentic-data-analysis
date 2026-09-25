@@ -53,7 +53,8 @@ def _context_numbers(state: AgentState) -> list[float]:
     """Numbers that describe what was asked rather than claim a value: those in the
     question itself and inside the result's text labels (e.g. "60 Hours & Over") - in
     cells, or in column names when the query pivoted the labels into columns."""
-    numbers = _extract_numbers(state["query"])
+    # both wordings: the intent step may restate "60+" as "60 or more", etc.
+    numbers = _extract_numbers(state["query"]) + _extract_numbers(state.get("intent_query") or "")
     analysis = state.get("analysis") or {}
     for column in analysis.get("columns", []):
         numbers += _extract_numbers(column)

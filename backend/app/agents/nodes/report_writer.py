@@ -1,5 +1,5 @@
 from app.agents.llm import node_model
-from app.agents.state import AgentState
+from app.agents.state import AgentState, task_question
 from app.agents.trace import emit_trace
 
 NODE_NAME = "report_writer"
@@ -59,7 +59,8 @@ async def report_writer_node(state: AgentState) -> AgentState:
         "round), and give units where the data states them. The app shows a chart and "
         "the result table next to your report, so never say you can't provide a chart.\n\n"
         f"{_review_note(state)}"
-        f"User question: {state['query']}\n\n"
+        f"User question: {state['query']}\n"
+        f"Interpreted as (state this reading in the report): {task_question(state)}\n\n"
         f"Query result (computed by the database):\n{_format_analysis(state.get('analysis'))}\n\n"
         f"Findings:\n{_format_findings(state['findings'])}\n\n"
         f"Data-access issues:\n{_format_errors(state['errors'])}"

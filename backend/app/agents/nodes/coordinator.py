@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 from app.agents.llm import node_model
-from app.agents.state import AgentState
+from app.agents.state import AgentState, task_question
 from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
 
@@ -51,7 +51,7 @@ async def coordinator_node(state: AgentState) -> AgentState:
         "catalog of available government datasets, decide which dataset(s) are "
         "relevant to answering it. Pick only what's needed - not every dataset.\n\n"
         f"Available datasets:\n{catalog}\n\n"
-        f"User question: {state['query']}"
+        f"User question: {task_question(state)}"
     )
 
     result: CoordinatorPlan = await model.ainvoke(prompt)

@@ -1,0 +1,111 @@
+"""Intent (ARCHITECTURE.md §3.2): rewrite the question into one precise reading before
+any planning, and decline questions no dataset could answer.
+
+Without it the same ambiguous wording was read differently run to run: "the share of
+women working 60+ hours" came back as a share of employed women in one run and as a
+share of all workers in the next. Fixing the reading once, up front, makes every later
+step (dataset choice, SQL, review) work on the same question.
+"""
+
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agents.llm import node_model
+from app.agents.state import AgentState
+from app.agents.trace import emit_trace
+from app.data.manifest import load_manifest
+from app.data.views import load_view_catalog, view_name_for
+
+NODE_NAME = "intent"
+
+
+class Intent(BaseModel):
+    rewritten: str = Field(
+        description=(
+            "The question restated as one precise, unambiguous analytical question, in the "
+            "same language. Keep the user's subject, measures, groups and years; resolve "
+            "vague wording rather than adding new scope."
+        )
+    )
+    answerable: bool = Field(
+        description="False only when no listed dataset could plausibly help answer it."
+    )
+    reason: str | None = Field(default=None, description="If not answerable: why, in one sentence.")
+
+
+def _catalog(manifest: list[dict], views: dict[str, list[dict]]) -> str:
+    """Title, years covered and what each dataset measures (measures with their
+    descriptions, dimension names) - enough to tell "not in the data" from "worded
+    differently in the data", which titles alone weren't."""
+    lines, seen = [], set()
+    for entry in manifest:
+        view = view_name_for(entry)
+        if view in seen:
+            continue
+        seen.add(view)
+        years = next(
+            (f"{c.get('min')}-{c.get('max')}" for c in views.get(view, []) if c["role"] == "time"),
+            "no time dimension",
+        )
+        title = entry["title"].split(",")[0] if entry.get("group") else entry["title"]
+        columns = views.get(view, [])
+        measures = "; ".join(
+            f"{c['column']}" + (f" ({c['description']})" if c.get("description") else "")
+            for c in columns
+            if c["role"] == "measure"
+        )
+        dimensions = ", ".join(
+            c["column"] for c in columns if c["role"] == "dimension" and not c.get("level_of")
+        )
+        lines.append(f"- {title}; years: {years}; measures: {measures}; by: {dimensions or '-'}")
+    return "\n".join(lines)
+
+
+async def intent_node(state: AgentState, session: AsyncSession) -> AgentState:
+    manifest = load_manifest()
+    views = await load_view_catalog(session, manifest)
+
+    emit_trace(state, NODE_NAME, "reasoning", "Restating the question precisely before planning.")
+    # Quality tier: deciding what a question means (and whether the data covers it) is
+    # a judgement call; the fast model kept rewording or refusing answerable questions.
+    model = node_model(state, NODE_NAME, "quality").with_structured_output(Intent)
+    intent: Intent = await model.ainvoke(
+        "Restate a policy researcher's question so every analyst would compute the same "
+        "thing. Change as little as possible: most questions are already precise and "
+        "should come back nearly word for word. Rules:\n"
+        "- Keep the kind of answer asked for. A count stays a count, a total stays a "
+        "total. Never turn a question into a share, rate, incidence or percentage unless "
+        "the user asked for one.\n"
+        "- Only when the user asks for a share, rate or percentage OF a group, make the "
+        "denominator explicit: \"the share of X doing Y\" means, among X, the percentage "
+        "doing Y (not X-doing-Y as a share of everyone). If the wording could still fairly "
+        "be read against two different groups, don't pick one: ask for both, each with its "
+        "denominator named, so the answer is the same whoever reads it.\n"
+        "- Resolve relative time (\"latest\", \"past 3 years\", \"recently\") to concrete "
+        "years using the coverage listed below.\n"
+        "- Keep the user's words for the measure: a \"share\" stays a share, a \"count\" a "
+        "count. Only the subject may be swapped for its exact synonym in the data "
+        "(\"layoffs\" -> retrenchment) - never for a different, merely related "
+        "one. If what the user asks about isn't what any dataset measures, set "
+        "answerable=false - don't answer a nearby question instead.\n"
+        "- Don't answer it; don't add groups, measures or years the user didn't ask about.\n\n"
+        f"Datasets:\n{_catalog(manifest, views)}\n\n"
+        f"Question: {state['query']}"
+    )
+
+    if not intent.answerable:
+        reason = intent.reason or "None of the available datasets cover this question."
+        state["errors"].append({"node_name": NODE_NAME, "message": reason})
+        state["report_markdown"] = (
+            f"This question can't be answered from the available datasets. {reason}"
+        )
+        emit_trace(state, NODE_NAME, "observation", f"Declined: {reason}")
+        return state
+
+    state["intent_query"] = intent.rewritten
+    emit_trace(state, NODE_NAME, "action", f"Interpreted as: {intent.rewritten}")
+    return state
+
+
+def route_after_intent(state: AgentState) -> str:
+    return "coordinator" if state.get("intent_query") else "end"
