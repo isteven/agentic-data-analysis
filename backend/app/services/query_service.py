@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.graph import build_graph
-from app.agents.state import clear_dataframes, new_state
+from app.agents.state import new_state
 from app.models.agent_trace import AgentTrace
 from app.models.analysis_run import AnalysisRun, AnalysisRunDataset
 from app.models.dataset import Dataset
@@ -23,9 +23,6 @@ async def execute_graph(session: AsyncSession, query_text: str, run_id: uuid.UUI
         final_state = state
         final_state["errors"].append({"node_name": "graph", "message": str(exc)})
         final_state["status"] = "failed"
-    finally:
-        clear_dataframes(str(run_id))
-
     return final_state
 
 

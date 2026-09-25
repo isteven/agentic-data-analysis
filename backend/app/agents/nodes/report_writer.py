@@ -16,6 +16,19 @@ def _format_findings(findings: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _format_analysis(analysis: dict | None) -> str:
+    if not analysis or not analysis.get("sql"):
+        return "(no query result)"
+    header = " | ".join(analysis["columns"])
+    rows = "\n".join(" | ".join(str(v) for v in row) for row in analysis["rows"][:50])
+    more = "\n(result truncated)" if analysis.get("truncated") else ""
+    return (
+        f"How the question was understood: {analysis.get('interpretation')}\n"
+        f"Query: {analysis['sql']}\n"
+        f"Result:\n{header}\n{rows}{more}"
+    )
+
+
 def _format_errors(errors: list[dict]) -> str:
     if not errors:
         return "(none)"
@@ -23,7 +36,9 @@ def _format_errors(errors: list[dict]) -> str:
 
 
 async def report_writer_node(state: AgentState) -> AgentState:
-    emit_trace(state, NODE_NAME, "reasoning", "Synthesizing findings into a natural-language report.")
+    emit_trace(
+        state, NODE_NAME, "reasoning", "Synthesizing findings into a natural-language report."
+    )
 
     model = get_chat_model(model_tier="quality")
     prompt = (
@@ -32,8 +47,11 @@ async def report_writer_node(state: AgentState) -> AgentState:
         "government data) and a list of any data-access issues encountered. Write a clear "
         "answer to the user's question using ONLY these findings - do not invent numbers. "
         "Cite the source dataset for every number you mention. If findings are missing or "
-        "incomplete for part of the question, say so explicitly rather than guessing.\n\n"
+        "incomplete for part of the question, say so explicitly rather than guessing. "
+        "Say briefly how the question was interpreted. Keep numbers as given (you may "
+        "round), and give units where the data states them.\n\n"
         f"User question: {state['query']}\n\n"
+        f"Query result (computed by the database):\n{_format_analysis(state.get('analysis'))}\n\n"
         f"Findings:\n{_format_findings(state['findings'])}\n\n"
         f"Data-access issues:\n{_format_errors(state['errors'])}"
     )

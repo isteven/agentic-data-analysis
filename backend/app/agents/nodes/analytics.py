@@ -1,122 +1,140 @@
-import re
+"""Analytics agent: the SQL planner (app/agents/planner.py) run as a graph node.
 
-import pandas as pd
+It answers the question over the views the extraction agent resolved, and turns the
+submitted query's result into findings - the only numbers the report may use. Which
+column is a label (year, sex, ...) and which is a value comes from the source views'
+profiles, so nothing here knows any dataset.
+"""
 
-from app.agents.state import AgentState, get_dataframe
+import logging
+from functools import partial
+
+import sqlglot
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlglot import exp
+
+from app.agents.planner import run_planner
+from app.agents.state import AgentState
 from app.agents.trace import emit_trace
-from app.data.cleaning import apply_default_slice
 from app.data.manifest import load_manifest
+from app.data.sql_runner import QueryResult, run_checked_sql
+from app.data.views import VIEW_SCHEMA, load_view_catalog
+from app.llm.provider_factory import get_chat_model
+
+logger = logging.getLogger(__name__)
 
 NODE_NAME = "analytics"
-
-# Columns treated as numeric metrics to aggregate, in priority order, per known dataset shape.
-_NUMERIC_METRIC_CANDIDATES = ["retrench", "job_vacancy", "value"]
+MAX_FINDINGS = 200  # the report cites a handful; this only bounds a runaway result
 
 
-def _find_query_filters(query: str, df: pd.DataFrame) -> dict[str, str]:
-    """Match query words against unique values of categorical (text) columns."""
-    filters: dict[str, str] = {}
-    query_lower = query.lower()
-    text_columns = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
-    for col in text_columns:
-        for value in df[col].dropna().unique():
-            value_str = str(value)
-            if len(value_str) < 3:
+def _views_in(sql: str) -> list[str]:
+    tree = sqlglot.parse_one(sql, read="postgres")
+    seen: list[str] = []
+    for table in tree.find_all(exp.Table):
+        if table.db == VIEW_SCHEMA and table.name not in seen:
+            seen.append(table.name)
+    return seen
+
+
+def findings_from_result(
+    result: QueryResult,
+    catalog: dict[str, list[dict]],
+    view_members: dict[str, list[tuple[str, int | None]]],
+) -> list[dict]:
+    """One finding per numeric value in the result, labelled by the row's label columns.
+    `view_members` is view -> [(dataset id, manifest year)]: a view built from one file
+    per year cites the file for the row's year, not just the first file."""
+    used = _views_in(result.sql)
+    label_columns = {
+        c["column"] for v in used for c in catalog.get(v, []) if c["role"] in ("time", "dimension")
+    }
+    time_columns = {c["column"] for v in used for c in catalog.get(v, []) if c["role"] == "time"}
+    labels = [i for i, name in enumerate(result.columns) if name in label_columns]
+    base_views = [v.removesuffix("_totals") for v in used]
+    members = next((view_members[v] for v in base_views if v in view_members), [])
+
+    def cite(row: list) -> str | None:
+        periods = {row[i] for i in labels if result.columns[i] in time_columns}
+        by_year = next((d for d, year in members if year is not None and year in periods), None)
+        return by_year or (members[0][0] if members else None)
+
+    field_ref = ", ".join(f"{VIEW_SCHEMA}.{v}" for v in used)[:128]
+
+    findings = []
+    for row in result.rows:
+        label = ", ".join(f"{result.columns[i]}={row[i]}" for i in labels)
+        for i, value in enumerate(row):
+            if i in labels or isinstance(value, bool) or not isinstance(value, (int, float)):
                 continue
-            # whole-word match, so "female" doesn't also match "Male"
-            if re.search(rf"\b{re.escape(value_str.lower())}\b", query_lower):
-                filters[col] = value_str
-                break
-    return filters
-
-
-def _pick_metric_column(df: pd.DataFrame) -> str | None:
-    for candidate in _NUMERIC_METRIC_CANDIDATES:
-        if candidate in df.columns:
-            return candidate
-    numeric_cols = df.select_dtypes(include="number").columns
-    for col in numeric_cols:
-        if col != "year":
-            return col
-    return None
-
-
-def _analyze_dataset(
-    dataset_id: str, df: pd.DataFrame, query: str, state: AgentState, entry: dict
-) -> None:
-    filters = _find_query_filters(query, df)
-    filtered_df = df
-    for col, value in filters.items():
-        filtered_df = filtered_df[filtered_df[col] == value]
-    filtered_df = apply_default_slice(filtered_df, entry, filtered_columns=set(filters))
-
-    filter_desc = ", ".join(f"{k}={v}" for k, v in filters.items()) or "no specific filter matched"
-    emit_trace(
-        state, NODE_NAME, "reasoning",
-        f"Analyzing '{dataset_id}': {filter_desc}; {len(filtered_df)} rows in scope.",
-    )
-
-    if filtered_df.empty:
-        emit_trace(state, NODE_NAME, "observation", f"No matching rows in '{dataset_id}' after filtering.")
-        return
-
-    metric_col = _pick_metric_column(filtered_df)
-    if metric_col is None:
-        emit_trace(state, NODE_NAME, "observation", f"No numeric metric column found in '{dataset_id}'.")
-        return
-
-    if "year" in filtered_df.columns:
-        by_year = (
-            filtered_df.groupby("year")[metric_col].sum(min_count=1).dropna().sort_index()
-        )
-        for year, value in by_year.items():
-            state["findings"].append(
+            name = f"{result.columns[i]} [{label}]" if label else result.columns[i]
+            findings.append(
                 {
-                    "metric_name": f"{metric_col}_{filter_desc or 'total'}_{year}",
+                    "metric_name": name[:128],
                     "value": float(value),
                     "unit": None,
-                    "dataset_id": dataset_id,
-                    "field_ref": f"{metric_col} (year={year}, {filter_desc})",
+                    "dataset_id": cite(row),
+                    "field_ref": field_ref,
                 }
             )
-        if len(by_year) >= 2:
-            first_year, last_year = by_year.index[0], by_year.index[-1]
-            delta = float(by_year.iloc[-1] - by_year.iloc[0])
-            state["findings"].append(
-                {
-                    "metric_name": f"{metric_col}_change_{first_year}_to_{last_year}",
-                    "value": delta,
-                    "unit": None,
-                    "dataset_id": dataset_id,
-                    "field_ref": f"{metric_col} trend {first_year}->{last_year} ({filter_desc})",
-                }
-            )
-        emit_trace(
-            state, NODE_NAME, "observation",
-            f"Computed {len(by_year)} year(s) of '{metric_col}' for '{dataset_id}'.",
-        )
-    else:
-        total = filtered_df[metric_col].sum(min_count=1)
-        if pd.notna(total):
-            state["findings"].append(
-                {
-                    "metric_name": f"{metric_col}_{filter_desc or 'total'}",
-                    "value": float(total),
-                    "unit": None,
-                    "dataset_id": dataset_id,
-                    "field_ref": f"{metric_col} ({filter_desc})",
-                }
-            )
-        emit_trace(state, NODE_NAME, "observation", f"Computed total '{metric_col}' for '{dataset_id}'.")
+            if len(findings) >= MAX_FINDINGS:
+                return findings
+    return findings
 
 
-async def analytics_node(state: AgentState) -> AgentState:
-    manifest_by_id = {entry["id"]: entry for entry in load_manifest()}
+async def analytics_node(
+    state: AgentState, session: AsyncSession, engine: AsyncEngine
+) -> AgentState:
+    manifest = load_manifest()
+    year_of = {entry["id"]: entry.get("year") for entry in manifest}
+    view_members: dict[str, list[tuple[str, int | None]]] = {}
     for extract in state["raw_extracts"]:
-        dataset_id = extract["dataset_id"]
-        df = get_dataframe(state["run_id"], dataset_id)
-        if df is None:
-            continue
-        _analyze_dataset(dataset_id, df, state["query"], state, manifest_by_id.get(dataset_id, {}))
+        view_members.setdefault(extract["view"], []).append(
+            (extract["dataset_id"], year_of.get(extract["dataset_id"]))
+        )
+    if not view_members:
+        emit_trace(
+            state, NODE_NAME, "observation", "No usable data was extracted; nothing to analyse."
+        )
+        return state
 
+    catalog = await load_view_catalog(session, manifest)
+    views = [v for base in view_members for v in (base, f"{base}_totals") if v in catalog]
+    emit_trace(state, NODE_NAME, "reasoning", f"Planning a query over: {', '.join(views)}.")
+
+    outcome = await run_planner(
+        question=state["query"],
+        views=views,
+        catalog=catalog,
+        model=get_chat_model(model_tier="fast"),
+        run_sql_fn=partial(run_checked_sql, engine, catalog=catalog),
+        trace=lambda kind, content: emit_trace(state, NODE_NAME, kind, content),
+    )
+    result = outcome.result
+    state["analysis"] = {
+        "status": outcome.status,
+        "interpretation": outcome.interpretation,
+        "sql": result.sql if result else None,
+        "columns": result.columns if result else [],
+        "rows": result.rows if result else [],
+        "truncated": result.truncated if result else False,
+        "reason": outcome.reason,
+    }
+
+    if result is None:
+        state["errors"].append(
+            {
+                "node_name": NODE_NAME,
+                "message": outcome.reason or "The question couldn't be answered.",
+            }
+        )
+        return state
+
+    state["findings"] = findings_from_result(result, catalog, view_members)
+    emit_trace(
+        state,
+        NODE_NAME,
+        "observation",
+        f"{len(state['findings'])} finding(s) from the final query "
+        f"({outcome.steps} step(s), {outcome.queries_rejected} rejected).",
+    )
     return state

@@ -1,33 +1,47 @@
-import pandas as pd
-from sqlalchemy import select
+"""Extraction agent: turns the coordinator's dataset choices into queryable views.
+
+Rows were parsed, cleaned and stored at ingest (scripts/seed_datasets.py), so nothing is
+re-parsed per question. This node checks each chosen dataset is actually stored, maps
+it to its typed view(s), and reports what the data-quality step did to it - totals and
+overlapping values excluded, unverified periods left out, which measures may be summed -
+so the trace shows the quality checks the numbers rest on.
+"""
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.state import AgentState, store_dataframe
+from app.agents.state import AgentState
 from app.agents.trace import emit_trace
-from app.data.api_client import fetch_datastore
-from app.data.cleaning import clean_dataset
 from app.data.manifest import load_manifest
-from app.data.parsers.csv_parser import read_csv
-from app.data.parsers.excel_parser import read_mom_hours_sheet
+from app.data.views import view_name_for
 from app.models.dataset import Dataset
+from app.models.dataset_record import DatasetRecord
 
 NODE_NAME = "extraction"
 
 
-async def _load_from_file(session: AsyncSession, dataset_id: str, entry: dict) -> pd.DataFrame:
-    """Reads a dataset from its seeded Postgres record + local file. Used both for
-    mode: file datasets and as the fallback path for mode: api datasets whose live
-    fetch failed (the fallback file is seeded into Postgres the same way, see
-    seed_datasets.py's _has_seedable_file)."""
-    dataset_row = await session.scalar(select(Dataset).where(Dataset.dataset_key == dataset_id))
-    if dataset_row is None or dataset_row.raw_cache_path is None:
-        raise RuntimeError(f"'{dataset_id}' has not been seeded yet.")
-
-    if entry["format"] == "csv":
-        return read_csv(dataset_row.raw_cache_path)
-    if entry["format"] == "xlsx":
-        return read_mom_hours_sheet(dataset_row.raw_cache_path, entry["sheet_name"])
-    raise NotImplementedError(f"Format '{entry['format']}' not supported")
+def quality_summary(profile: list[dict]) -> str:
+    """One line per fact the ingest step inferred, for the trace."""
+    notes = []
+    for c in profile:
+        if c.get("exclude_values"):
+            notes.append(
+                f"{c['column']}: excluded {', '.join(c['exclude_values'])} (totals/overlaps)"
+            )
+        if c.get("parents"):
+            notes.append(f"{c['column']}: {c.get('levels', 1)}-level hierarchy, lowest level kept")
+        if c.get("unverified_periods"):
+            spans = ", ".join(f"{lo}-{hi}" for lo, hi in c["unverified_periods"])
+            notes.append(f"{c['column']}: periods {spans} left out (classification not verifiable)")
+        if c.get("null_pct"):
+            notes.append(f"{c['column']}: {c['null_pct']:.0%} missing")
+    summable = [c["column"] for c in profile if c["role"] == "measure" and c.get("additive")]
+    other = [c["column"] for c in profile if c["role"] == "measure" and not c.get("additive")]
+    if summable:
+        notes.append(f"summable: {', '.join(summable)}")
+    if other:
+        notes.append(f"not summable: {', '.join(other)}")
+    return "; ".join(notes) or "no issues found"
 
 
 async def extraction_node(state: AgentState, session: AsyncSession) -> AgentState:
@@ -36,82 +50,47 @@ async def extraction_node(state: AgentState, session: AsyncSession) -> AgentStat
     for step in state["plan"]:
         dataset_id = step["dataset_id"]
         entry = manifest_by_id.get(dataset_id)
-
         if entry is None:
             emit_trace(
-                state, NODE_NAME, "observation",
-                f"Coordinator selected unknown dataset id '{dataset_id}' - skipping.",
+                state, NODE_NAME, "observation", f"Unknown dataset id '{dataset_id}' - skipped."
             )
             state["errors"].append(
                 {"node_name": NODE_NAME, "message": f"Unknown dataset id: {dataset_id}"}
             )
             continue
 
-        mode = entry.get("mode")
-
-        if mode not in ("file", "api"):
-            emit_trace(
-                state, NODE_NAME, "observation",
-                f"'{dataset_id}' has unrecognized mode={mode} - skipping.",
+        emit_trace(state, NODE_NAME, "action", f"Checking stored data for '{dataset_id}'.")
+        dataset = await session.scalar(select(Dataset).where(Dataset.dataset_key == dataset_id))
+        row_count = 0
+        if dataset is not None:
+            row_count = await session.scalar(
+                select(func.count())
+                .select_from(DatasetRecord)
+                .where(DatasetRecord.dataset_id == dataset.id)
             )
-            state["errors"].append(
-                {"node_name": NODE_NAME, "message": f"Unrecognized mode for '{dataset_id}': {mode}"}
-            )
+        if not row_count:
+            message = f"'{dataset_id}' has no stored data (not seeded, or its file is missing)."
+            emit_trace(state, NODE_NAME, "observation", message)
+            state["errors"].append({"node_name": NODE_NAME, "message": message})
             continue
 
-        df: pd.DataFrame | None = None
-        source_mode = "file"
-
-        if mode == "api":
-            emit_trace(state, NODE_NAME, "action", f"Querying live API for '{dataset_id}'.")
-            try:
-                df = await fetch_datastore(entry["resource_id"])
-                source_mode = "live"
-                emit_trace(
-                    state, NODE_NAME, "observation",
-                    f"Live fetch succeeded for '{dataset_id}': {len(df)} rows.",
-                )
-            except Exception as exc:  # noqa: BLE001 - fall back to file below, don't propagate
-                emit_trace(
-                    state, NODE_NAME, "observation",
-                    f"Live fetch failed for '{dataset_id}' ({exc}); "
-                    f"{'falling back to cached file.' if entry.get('api_fallback') == 'file' else 'no fallback configured.'}",
-                )
-                if entry.get("api_fallback") != "file":
-                    state["errors"].append(
-                        {
-                            "node_name": NODE_NAME,
-                            "message": f"Live fetch failed for '{dataset_id}' and no fallback is configured: {exc}",
-                        }
-                    )
-                    continue
-                mode = "file"  # fall through to the shared file-loading path below
-                source_mode = "file_fallback"
-
-        if mode == "file":
-            if df is None:  # not already loaded live above
-                emit_trace(state, NODE_NAME, "action", f"Loading '{dataset_id}' from database record.")
-            try:
-                if df is None:
-                    df = await _load_from_file(session, dataset_id, entry)
-            except Exception as exc:  # noqa: BLE001 - per-source isolation, continue with other sources
-                emit_trace(state, NODE_NAME, "observation", f"Failed to load '{dataset_id}': {exc}")
-                state["errors"].append({"node_name": NODE_NAME, "message": str(exc)})
-                continue
-
-        df = clean_dataset(df, entry)
-        store_dataframe(state["run_id"], dataset_id, df)
+        view = view_name_for(entry)
+        profile = dataset.schema_profile or []
         state["raw_extracts"].append(
             {
                 "dataset_id": dataset_id,
-                "row_count": len(df),
-                "columns": list(df.columns),
-                "source_mode": source_mode,
+                "row_count": row_count,
+                "columns": [c["column"] for c in profile],
+                "source_mode": "stored",
+                "view": view,
             }
         )
         emit_trace(
-            state, NODE_NAME, "observation",
-            f"Loaded '{dataset_id}' ({source_mode}): {len(df)} rows, columns: {', '.join(df.columns)}.",
+            state,
+            NODE_NAME,
+            "observation",
+            f"'{dataset_id}': {row_count} rows, queried as data.{view}. "
+            f"Quality checks: {quality_summary(profile)}.",
         )
 
     return state

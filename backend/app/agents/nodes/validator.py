@@ -12,7 +12,9 @@ NODE_NAME = "validator"
 # character, so "2024-2025" (range) and "post-2020" (hyphenated prefix) don't
 # parse their second half as a negative number - only a true negative in prose
 # (preceded by whitespace/punctuation/start-of-string) counts as signed.
-_NUMBER_RE = re.compile(r"(?<!\w)-\d{1,3}(?:,\d{3})+(?:\.\d+)?|(?<!\w)-\d+(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
+_NUMBER_RE = re.compile(
+    r"(?<!\w)-\d{1,3}(?:,\d{3})+(?:\.\d+)?|(?<!\w)-\d+(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+)
 _RELATIVE_TOLERANCE = 0.01
 _YEAR_RANGE = range(1900, 2101)
 
@@ -47,20 +49,34 @@ def _is_grounded(value: float, known_values: list[float]) -> bool:
     return False
 
 
+def _context_numbers(state: AgentState) -> list[float]:
+    """Numbers that describe what was asked rather than claim a value: those in the
+    question itself and inside the result's text labels (e.g. "60 Hours & Over")."""
+    numbers = _extract_numbers(state["query"])
+    for row in (state.get("analysis") or {}).get("rows", []):
+        for cell in row:
+            if isinstance(cell, str):
+                numbers += _extract_numbers(cell)
+    return numbers
+
+
 async def validator_node(state: AgentState) -> AgentState:
     report = state.get("report_markdown") or ""
     known_values = [f["value"] for f in state["findings"] if f["value"] is not None]
+    context = _context_numbers(state)
 
     claimed_numbers = _extract_numbers(report)
     # small integers are usually list/section numbering, not data claims - skip them
     substantive = [n for n in claimed_numbers if abs(n) >= 10]
 
-    ungrounded = [n for n in substantive if not _is_grounded(n, known_values)]
+    ungrounded = [n for n in substantive if not _is_grounded(n, known_values) and n not in context]
 
     if not known_values:
         state["grounded"] = None
         emit_trace(
-            state, NODE_NAME, "observation",
+            state,
+            NODE_NAME,
+            "observation",
             "No findings were available to check the report against.",
         )
         return state
@@ -68,7 +84,12 @@ async def validator_node(state: AgentState) -> AgentState:
     state["grounded"] = len(ungrounded) == 0
 
     if state["grounded"]:
-        emit_trace(state, NODE_NAME, "observation", "All numeric claims in the report match computed findings.")
+        emit_trace(
+            state,
+            NODE_NAME,
+            "observation",
+            "All numeric claims in the report match computed findings.",
+        )
     else:
         caveat = (
             "\n\n---\n*Note: this report contains figures that could not be automatically "
@@ -76,7 +97,9 @@ async def validator_node(state: AgentState) -> AgentState:
         )
         state["report_markdown"] = report + caveat
         emit_trace(
-            state, NODE_NAME, "observation",
+            state,
+            NODE_NAME,
+            "observation",
             f"Found {len(ungrounded)} numeric claim(s) not matching any computed finding: {ungrounded}",
         )
 

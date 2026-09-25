@@ -1,4 +1,4 @@
-from typing import Any, TypedDict
+from typing import TypedDict
 
 
 class PlanStep(TypedDict):
@@ -10,7 +10,8 @@ class RawExtract(TypedDict):
     dataset_id: str
     row_count: int
     columns: list[str]
-    source_mode: str  # "file" | "live" | "file_fallback"
+    source_mode: str  # "stored" (rows in dataset_records, read through its view)
+    view: str
 
 
 class TraceEvent(TypedDict):
@@ -32,11 +33,24 @@ class AgentError(TypedDict):
     message: str
 
 
+class Analysis(TypedDict):
+    """The planner's committed query and its result - the only source of numbers."""
+
+    status: str  # "answered" | "cannot_answer" | "gave_up"
+    interpretation: str | None
+    sql: str | None
+    columns: list[str]
+    rows: list[list]
+    truncated: bool
+    reason: str | None
+
+
 class AgentState(TypedDict):
     query: str
     run_id: str
     plan: list[PlanStep]
     raw_extracts: list[RawExtract]
+    analysis: Analysis | None
     findings: list[FindingDict]
     report_markdown: str | None
     grounded: bool | None
@@ -50,27 +64,10 @@ def new_state(query: str, run_id: str) -> AgentState:
         run_id=run_id,
         plan=[],
         raw_extracts=[],
+        analysis=None,
         findings=[],
         report_markdown=None,
         grounded=None,
         trace_events=[],
         errors=[],
     )
-
-
-# module-level, per-run dataframe store keyed by (run_id, dataset_id) - kept out of
-# AgentState since LangGraph state should stay JSON-serializable; only lightweight
-# metadata (RawExtract) goes into state itself.
-_dataframe_store: dict[str, dict[str, Any]] = {}
-
-
-def store_dataframe(run_id: str, dataset_id: str, df: Any) -> None:
-    _dataframe_store.setdefault(run_id, {})[dataset_id] = df
-
-
-def get_dataframe(run_id: str, dataset_id: str) -> Any | None:
-    return _dataframe_store.get(run_id, {}).get(dataset_id)
-
-
-def clear_dataframes(run_id: str) -> None:
-    _dataframe_store.pop(run_id, None)
