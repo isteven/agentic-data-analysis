@@ -17,6 +17,7 @@ async def submit_query(
     return QueryResponse(
         run_id=str(run.id),
         status=run.status,
+        provider_used=run.provider_used,
         report_markdown=run.report_markdown,
         trace=[TraceStep(**event) for event in trace_events],
         analysis=Analysis(**run.chart_specs) if run.chart_specs else None,

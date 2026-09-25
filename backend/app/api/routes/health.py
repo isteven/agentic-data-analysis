@@ -14,6 +14,9 @@ async def health():
 async def health_providers():
     settings = get_settings()
     return {
-        "openai": {"enabled": settings.openai_enabled},
-        "bedrock": {"enabled": settings.bedrock_enabled},
+        "default": settings.llm_default_provider,
+        "providers": {
+            "openai": {"enabled": settings.openai_enabled},
+            "bedrock": {"enabled": settings.bedrock_enabled},
+        },
     }

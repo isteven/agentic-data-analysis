@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { Composer } from "@/components/Composer";
-import type { ChatTurn, QueryResponse } from "@/lib/types";
+import type { ChatTurn, ProvidersInfo, QueryResponse } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -17,8 +17,21 @@ const SUGGESTIONS = [
 export default function Home() {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [draft, setDraft] = useState("");
+  const [providers, setProviders] = useState<ProvidersInfo | null>(null);
+  const [provider, setProvider] = useState<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const busy = turns.some((t) => t.pending);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/health/providers`)
+      .then((res) => (res.ok ? (res.json() as Promise<ProvidersInfo>) : Promise.reject(res.status)))
+      .then((info) => {
+        setProviders(info);
+        setProvider(info.default);
+      })
+      // Without the list the picker is hidden and the server default is used.
+      .catch((err) => console.error(`[DEBUG] ${new Date().toISOString()} providers fetch failed`, err));
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -35,7 +48,7 @@ export default function Home() {
       const res = await fetch(`${API_URL}/api/queries`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, provider: provider || undefined }),
       });
       if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
       update({ result: (await res.json()) as QueryResponse });
@@ -94,7 +107,15 @@ export default function Home() {
       </main>
 
       <div className="mx-auto w-full max-w-3xl px-4 pb-4">
-        <Composer value={draft} onChange={setDraft} onSubmit={() => ask(draft.trim())} disabled={busy} />
+        <Composer
+          value={draft}
+          onChange={setDraft}
+          onSubmit={() => ask(draft.trim())}
+          disabled={busy}
+          providers={providers}
+          provider={provider}
+          onProviderChange={setProvider}
+        />
         <p className="mt-2 text-center text-xs text-zinc-400">
           Every number is computed by the database and checked against the report.
         </p>

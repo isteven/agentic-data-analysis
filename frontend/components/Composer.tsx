@@ -1,16 +1,30 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { ProvidersInfo } from "@/lib/types";
+
+const PROVIDER_LABELS: Record<string, string> = { openai: "OpenAI", bedrock: "AWS Bedrock" };
 
 interface Props {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
   disabled: boolean;
+  providers: ProvidersInfo | null;
+  provider: string;
+  onProviderChange: (provider: string) => void;
 }
 
 /** Auto-growing prompt box: Enter sends, Shift+Enter adds a line. */
-export function Composer({ value, onChange, onSubmit, disabled }: Props) {
+export function Composer({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+  providers,
+  provider,
+  onProviderChange,
+}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -45,6 +59,22 @@ export function Composer({ value, onChange, onSubmit, disabled }: Props) {
         placeholder="Ask about retrenchment, working hours, graduate employment…"
         className="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100"
       />
+      {providers && (
+        <select
+          value={provider}
+          onChange={(e) => onProviderChange(e.target.value)}
+          aria-label="LLM provider"
+          title="LLM provider; another configured provider takes over if this one fails"
+          className="mb-1 rounded-lg bg-transparent px-1 py-1 text-xs text-zinc-500 outline-none hover:bg-zinc-100 dark:hover:bg-zinc-800"
+        >
+          {Object.entries(providers.providers).map(([name, { enabled }]) => (
+            <option key={name} value={name} disabled={!enabled}>
+              {PROVIDER_LABELS[name] ?? name}
+              {enabled ? "" : " (not configured)"}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         type="submit"
         disabled={!canSend}

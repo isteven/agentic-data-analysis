@@ -7,6 +7,7 @@ export interface TraceStep {
 export interface QueryResponse {
   run_id: string;
   status: string;
+  provider_used: string | null;
   report_markdown: string | null;
   trace: TraceStep[];
   analysis: Analysis | null;
@@ -41,4 +42,10 @@ export interface ChatTurn {
   pending: boolean;
   result?: QueryResponse;
   error?: string;
+}
+
+/** GET /api/health/providers: which LLM providers the backend has configured. */
+export interface ProvidersInfo {
+  default: string;
+  providers: Record<string, { enabled: boolean }>;
 }

@@ -95,6 +95,13 @@ export function ChatMessage({ turn }: { turn: ChatTurn }) {
                 </p>
               )}
               <ResultTabs result={turn.result} />
+              {turn.result.provider_used && (
+                <p className="mt-3 text-xs text-zinc-400">
+                  {turn.result.provider_used.includes("->")
+                    ? `Provider fallback: ${turn.result.provider_used}`
+                    : `Answered by ${turn.result.provider_used}`}
+                </p>
+              )}
             </>
           )}
         </div>
