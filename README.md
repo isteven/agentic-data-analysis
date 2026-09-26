@@ -63,6 +63,19 @@ RUN_LLM_EVALS=1 TEST_DATABASE_URL=... PYTHONPATH=. \
 
 Frontend: `npm test` (Vitest), `npm run lint` and `npm run build` in `frontend/`. CI runs all of this except the LLM evals (a manual workflow). Load test (Locust, mocked LLM): see `backend/tests/performance/locustfile.py`. Strategy and results: [TESTING.md](TESTING.md).
 
+## Observability
+
+Logs are the integration point: set `LOG_FORMAT=json` in `backend/.env` and every line from the API and the worker is one JSON object that Loki/Grafana, Datadog, ELK or CloudWatch can ingest as-is (`text`, the default, is for reading in a terminal). Every line carries `ts` (UTC), `level`, `logger`, `message`, and `run_id` while a question is being worked on, so one run can be followed end to end.
+
+| `message` | Fields | Use |
+|---|---|---|
+| `http request` | `method`, `path`, `status`, `duration_ms`, `client` | request rate, errors, latency |
+| `llm call` | `node_name`, `tier`, `provider`, `model`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `latency_ms`, `outcome` | tokens per model, LLM latency, failed attempts |
+| `agent step` | `node_name`, `step_type`, `content` | what each agent did |
+| `run finished` | `status`, `duration_ms`, `llm_calls`, `errors`, `fallbacks` | run time, failure and fallback rates |
+
+**LangSmith (optional):** the agents run on LangChain/LangGraph, so adding `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT` to `backend/.env` traces every graph step and LLM call, with no code change. Note this sends prompts and data to LangSmith.
+
 ## Sample questions
 
 | Question | Shows |

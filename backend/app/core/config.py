@@ -9,6 +9,9 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     log_level: str = "INFO"
+    # "json" = one JSON object per line, for log tools (Loki/Grafana, Datadog, ELK,
+    # CloudWatch); "text" for reading in a terminal.
+    log_format: Literal["text", "json"] = "text"
 
     database_url: str = "postgresql+asyncpg://apda:apda@db:5432/apda"
     redis_url: str = "redis://redis:6379/0"

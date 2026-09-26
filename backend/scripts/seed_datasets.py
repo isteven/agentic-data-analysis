@@ -187,5 +187,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    configure_logging(get_settings().log_level)
+    configure_logging(get_settings().log_level, get_settings().log_format)
     asyncio.run(main())

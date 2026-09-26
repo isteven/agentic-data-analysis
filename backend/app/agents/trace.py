@@ -1,7 +1,13 @@
+import logging
 from collections.abc import Callable
 from contextvars import ContextVar, Token
 
 from app.agents.state import AgentState, TraceEvent
+
+logger = logging.getLogger(__name__)
+
+# Agent steps can be long (SQL, tool output); logs keep the start.
+LOGGED_CONTENT_CHARS = 1000
 
 # Set by the worker for the duration of a run, so every event reaches the live stream
 # the moment a node emits it - including each tool call inside the planner, which would
@@ -20,6 +26,10 @@ def reset_trace_sink(token: Token) -> None:
 def emit_trace(state: AgentState, node_name: str, step_type: str, content: str) -> None:
     event: TraceEvent = {"node_name": node_name, "step_type": step_type, "content": content}
     state["trace_events"].append(event)
+    logger.info(
+        "agent step",
+        extra={"node_name": node_name, "step_type": step_type, "content": content[:LOGGED_CONTENT_CHARS]},
+    )
     sink = _sink.get()
     if sink is not None:
         sink(event)
