@@ -67,10 +67,10 @@ START -> coordinator -> extraction -> analytics (ReAct SQL planner) -> report_wr
 |---|---|---|
 | **coordinator** | Yes (fast tier) | Reads the dataset catalog (`manifest.yaml`) and picks the datasets relevant to the question (structured output) |
 | **extraction** | No | Checks each chosen dataset is stored, maps it to its typed view, and traces the data-quality facts inferred at ingest (totals/overlaps excluded, unverified periods, summable measures) |
-| **analytics** | Yes (fast tier) | ReAct planner (`app/agents/planner.py`): tools `describe_view`, `sample_rows`, `run_sql`, then `submit_answer(sql, interpretation)` or `cannot_answer`. Max 8 tool calls. Every query goes through the SQL gate and read-only runner; a rejection is an observation the planner fixes. The submitted query's result becomes `Finding`s |
+| **analytics** | Yes (quality tier; fast-tier plans ran out of steps on multi-step questions) | ReAct planner (`app/agents/planner.py`): tools `describe_view`, `sample_rows`, `run_sql`, then `submit_answer(sql, interpretation)` or `cannot_answer`. Max 8 tool calls. Every query goes through the SQL gate and read-only runner; a rejection is an observation the planner fixes. The submitted query's result becomes `Finding`s |
 | **report_writer** | Yes (quality tier) | Writes the report from the query result and findings only, stating how the question was interpreted and citing sources |
 | **validator** | No | Every number in the report must match a finding (1% tolerance); numbers from the question or result labels (cells or column names) count as context. Appends a warning otherwise |
-| **reviewer** | Yes (fast tier) | LLM judge of meaning, not arithmetic: sees the question, what each queried column means, the SQL, result and report. `pass`, `wrong_analysis` (back to analytics) or `poor_report` (back to report_writer), with the reason as feedback. Max 1 re-route; after that the answer keeps a visible caveat |
+| **reviewer** | Yes (quality tier) | LLM judge of meaning, not arithmetic: sees the question, what each queried column means, the SQL, result and report. `pass`, `wrong_analysis` (back to analytics) or `poor_report` (back to report_writer), with the reason as feedback. Max 1 re-route; after that the answer keeps a visible caveat |
 
 **Safety of LLM-written SQL** (`app/data/sql_gate.py`, `sql_runner.py`): sqlglot allows one `SELECT` over `data` views only, known columns (with "did you mean" hints), no `SUM` over non-additive measures, no side-effect functions, and runs the SQL regenerated from the checked tree. Postgres then runs it in a `READ ONLY` transaction as the `NOLOGIN` role `data_reader` (SELECT on the views only), with a 5 s timeout and a 500-row cap. Each layer alone stops a write.
 
@@ -118,7 +118,7 @@ Every node calls `emit_trace(state, node, step_type, content)` with `step_type` 
 All agent code gets a model from `get_chat_model(provider, model_tier)` in `backend/app/llm/provider_factory.py`; nothing imports a provider SDK directly. Two independent choices:
 
 - **Provider:** `openai` and `bedrock` (`langchain_aws.ChatBedrockConverse`) built; `azure_openai` / `vertex_ai` stubs.
-- **Tier:** `fast` (coordinator) or `quality` (report writer), mapped to model ids in `.env`.
+- **Tier:** fixed per node, mapped to model ids in `.env`: `fast` for the coordinator (picking datasets); `quality` for intent, analytics (the SQL planner), report writer and reviewer. Nothing switches tier during a run.
 
 ### 4.2 Switching and fallback
 

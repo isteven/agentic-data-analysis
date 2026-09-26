@@ -66,6 +66,15 @@ CASES = [
         "SELECT university FROM data.graduate_employment_survey WHERE year = 2023"
         " GROUP BY university ORDER BY AVG(employment_rate_overall) DESC LIMIT 1",
     ),
+    Case(
+        # Multi-step: a share (out of all employed women) compared across two years.
+        # The fast-tier planner ran out of steps on this; the 2025 share must be present.
+        "women_60_plus_share",
+        "How did the share of women working 60+ hours change from 2023 to 2025?",
+        None,
+        "SELECT 100.0 * SUM(value) FILTER (WHERE hours_bucket = '60 Hours & Over') / SUM(value)"
+        " FROM data.mom_usual_hours_by_occupation WHERE year = 2025 AND sex = 'Female'",
+    ),
     Case("gdp_unanswerable", "What was Singapore's GDP growth rate in 2020?", None),
 ]
 
