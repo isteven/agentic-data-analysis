@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { Composer } from "@/components/Composer";
 import { AppHeader } from "@/components/AppHeader";
@@ -22,10 +22,12 @@ export default function Home() {
   const [draft, setDraft] = useState("");
   const [providers, setProviders] = useState<ProvidersInfo | null>(null);
   const [provider, setProvider] = useState<string>("");
-  const bottomRef = useRef<HTMLDivElement>(null);
   const busy = turns.some((t) => t.pending);
   // Bumped whenever a turn finishes, so the sidebar re-fetches and shows the new entry.
   const completedCount = turns.filter((t) => t.result || t.error).length;
+  // One question per chat: each run is answered on its own (no follow-up context yet),
+  // so the prompt box goes as soon as the question is asked; New Chat starts the next one.
+  const asked = turns.length > 0;
 
   useEffect(() => {
     fetch(`${API_URL}/api/health/providers`)
@@ -37,10 +39,6 @@ export default function Home() {
       // Without the list the picker is hidden and the server default is used.
       .catch((err) => console.error(`[DEBUG] ${new Date().toISOString()} providers fetch failed`, err));
   }, []);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [turns]);
 
   async function ask(query: string) {
     const id = crypto.randomUUID();
@@ -87,21 +85,22 @@ export default function Home() {
                 {turns.map((t) => (
                   <ChatMessage key={t.id} turn={t} />
                 ))}
-                <div ref={bottomRef} />
               </div>
             )}
           </main>
 
           <div className={`${shared.column} ${styles.composer}`}>
-            <Composer
-              value={draft}
-              onChange={setDraft}
-              onSubmit={() => ask(draft.trim())}
-              disabled={busy}
-              providers={providers}
-              provider={provider}
-              onProviderChange={setProvider}
-            />
+            {!asked && (
+              <Composer
+                value={draft}
+                onChange={setDraft}
+                onSubmit={() => ask(draft.trim())}
+                disabled={busy}
+                providers={providers}
+                provider={provider}
+                onProviderChange={setProvider}
+              />
+            )}
             <p className={styles.footnote}>
               AI can make mistakes. Please double-check responses.
             </p>
