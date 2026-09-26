@@ -86,7 +86,7 @@ jobs:
         run: uv run pytest tests/integration -v
 
   frontend:
-    name: Frontend (lint + typecheck + build)
+    name: Frontend (lint + tests + typecheck + build)
     runs-on: ubuntu-latest
     defaults:
       run:
