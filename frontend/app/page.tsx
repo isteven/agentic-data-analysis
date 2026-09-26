@@ -89,7 +89,7 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className={`${shared.column} ${styles.turns}`}>
+              <div className={`${shared.column} ${styles.turns}`}>              
                 {turns.map((t) => (
                   <ChatMessage key={t.id} turn={t} />
                 ))}
@@ -109,7 +109,7 @@ export default function Home() {
               onProviderChange={setProvider}
             />
             <p className={styles.footnote}>
-              Every number is computed by the database and checked against the report.
+              AI can make mistakes. Please double-check responses.
             </p>
           </div>
         </div>

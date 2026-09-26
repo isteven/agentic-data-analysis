@@ -32,10 +32,10 @@ export default function HistoryDetailPage({ params }: { params: Promise<{ runId:
 
         <div className={styles.detailScroll}>
           <div className={`${shared.column} ${styles.detail}`}>
-            <Link href="/" className={styles.backLink}>
-              ← New chat
-            </Link>
-
+            <br />
+            {/* <Link href="/" className={styles.backLink}>
+              ← Back
+            </Link> */}
             {error && <p className={`${shared.error} ${styles.spaced}`}>{error}</p>}
             {!error && !result && <p className={`${shared.muted} ${styles.spaced}`}>Loading…</p>}
 

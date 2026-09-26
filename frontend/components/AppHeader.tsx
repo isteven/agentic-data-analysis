@@ -10,10 +10,13 @@ export function AppHeader({ children }: { children?: React.ReactNode }) {
       <Link href="/" className={styles.title}>
         <Image src={logo} alt="" className={styles.logo} priority />
         <span className={styles.titleOnly}>
-            Policy Data Analytics
+            POLICY DATA ANALYTICS
             </span>
       </Link>
       {children}
+      {<Link href="/" className={styles.outlineButton}>
+        New Chat
+      </Link>}
     </header>
   );
 }

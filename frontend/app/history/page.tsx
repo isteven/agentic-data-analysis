@@ -32,9 +32,9 @@ export default function HistoryPage() {
     <div className={`${shared.column} ${styles.listPage}`}>
       <div className={styles.listHeader}>
         <h1 className={shared.pageTitle}>History</h1>
-        <Link href="/" className={shared.outlineButton}>
+        {<Link href="/" className={shared.outlineButton}>
           New chat
-        </Link>
+        </Link>}
       </div>
 
       {error && <p className={shared.error}>{error}</p>}

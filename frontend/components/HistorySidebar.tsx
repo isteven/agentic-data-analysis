@@ -44,7 +44,9 @@ export function HistorySidebar({ refreshKey }: { refreshKey?: unknown }) {
   return (
     <aside className={styles.sidebar}>
       <div className={styles.heading}>
-        <span className={styles.headingLabel}>History</span>
+        <div className={styles.headingLabel}>
+          History
+        </div>
         <button
           onClick={() => setCollapsed(true)}
           aria-label="Hide history"
