@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -7,12 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.graph import build_graph
 from app.agents.state import new_state
 from app.core.config import get_settings
+from app.db.session import SessionFactory
 from app.llm.usage import summarize_usage
 from app.models.agent_trace import AgentTrace
 from app.models.analysis_run import AnalysisRun, AnalysisRunDataset
 from app.models.dataset import Dataset
 from app.models.finding import Finding
 from app.models.llm_call import LlmCallRecord
+
+logger = logging.getLogger(__name__)
 
 # Fields of a state["llm_calls"] entry, as stored per row in llm_calls.
 _LLM_CALL_FIELDS = (
@@ -28,21 +32,31 @@ _LLM_CALL_FIELDS = (
 )
 
 
-async def execute_graph(
-    session: AsyncSession, query_text: str, run_id: uuid.UUID, provider: str | None = None
-) -> dict:
-    state = new_state(query=query_text, run_id=str(run_id), provider=provider)
+async def run_graph(session_factory: SessionFactory, state: dict) -> dict:
+    """Run the agent graph on `state` and set its final status. The one place the
+    graph is run - by the worker and by the tests - so status rules can't drift.
 
-    graph = build_graph(session)
+    Each step already has its own error boundary (app/agents/graph.py); this catch is
+    for a failure of the graph machinery itself. Cancellation (a job timeout) is not
+    caught here: the worker handles it.
+    """
     try:
-        final_state = await graph.ainvoke(state)
-        # status column is varchar(16) - keep values short
-        final_state["status"] = "completed" if not final_state.get("errors") else "partial"
-    except Exception as exc:  # noqa: BLE001 - unrecoverable graph failure, degrade gracefully
-        final_state = state
-        final_state["errors"].append({"node_name": "graph", "message": str(exc)})
-        final_state["status"] = "failed"
+        final_state = await build_graph(session_factory).ainvoke(state)
+    except Exception as exc:  # unrecoverable graph failure: degrade to a failed run
+        logger.exception("[DEBUG] run_graph: graph failed run_id=%s", state.get("run_id"))
+        state["errors"].append({"node_name": "graph", "message": f"{type(exc).__name__}: {exc}"})
+        state["status"] = "failed"
+        return state
+    # status column is varchar(16) - keep values short
+    final_state["status"] = "completed" if not final_state.get("errors") else "partial"
     return final_state
+
+
+async def execute_graph(
+    session_factory: SessionFactory, query_text: str, run_id: uuid.UUID, provider: str | None = None
+) -> dict:
+    """A run without the queue (tests, evals): a fresh state through run_graph."""
+    return await run_graph(session_factory, new_state(query=query_text, run_id=str(run_id), provider=provider))
 
 
 async def create_run(
@@ -62,13 +76,25 @@ async def create_run(
     return run
 
 
+async def mark_run_failed(session: AsyncSession, run_id: uuid.UUID, message: str) -> None:
+    """Last resort when a run can't be saved normally (or never reached the queue): end
+    it as failed, so a poll or the history page doesn't show it running forever."""
+    run = await session.get(AnalysisRun, run_id)
+    if run is None:
+        return
+    run.status = "failed"
+    run.report_markdown = message
+    run.completed_at = datetime.now(UTC)
+    await session.commit()
+
+
 async def persist_run(
     session: AsyncSession, run_id: uuid.UUID, query_text: str, final_state: dict
 ) -> tuple[AnalysisRun, list[dict]]:
     run = await session.get(AnalysisRun, run_id)
     if run is None:
-        # Fallback for a run never created via create_run() (e.g. the old synchronous
-        # path, or a test) - insert rather than update.
+        # Fallback for a run never created via create_run() (a test or eval that
+        # runs the graph directly) - insert rather than update.
         run = AnalysisRun(id=run_id, query_text=query_text)
         session.add(run)
 
@@ -130,17 +156,6 @@ def _provider_used(final_state: dict) -> str:
     used = final_state.get("provider") or get_settings().llm_default_provider
     switches = sorted(set(final_state.get("fallbacks", [])))
     return (", ".join(switches) if switches else used)[:32]
-
-
-async def run_query(
-    session: AsyncSession, query_text: str, provider: str | None = None
-) -> tuple[AnalysisRun, list[dict]]:
-    """Synchronous path: runs the graph in-request and persists in one call. Superseded
-    by create_run() + the worker task + persist_run() for the real API route, but kept
-    for anything that wants a one-shot result without Redis/a worker (tests, scripts)."""
-    run_id = uuid.uuid4()
-    final_state = await execute_graph(session, query_text, run_id, provider)
-    return await persist_run(session, run_id, query_text, final_state)
 
 
 async def list_runs(session: AsyncSession, limit: int = 50) -> list[AnalysisRun]:

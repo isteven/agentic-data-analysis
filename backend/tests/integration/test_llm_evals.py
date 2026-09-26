@@ -132,8 +132,7 @@ async def test_llm_eval(seeded_db, case):
 
     for run in range(1, RUNS + 1):
         started = time.monotonic()
-        async with AsyncSessionLocal() as session:
-            state = await execute_graph(session, case.question, uuid.uuid4())
+        state = await execute_graph(AsyncSessionLocal, case.question, uuid.uuid4())
         analysis = state.get("analysis") or {}
         rows = analysis.get("rows") or []
         declined = not rows

@@ -10,7 +10,7 @@ import logging
 from functools import partial
 
 import sqlglot
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlglot import exp
 
 from app.agents.chart import build_chart_spec
@@ -21,6 +21,7 @@ from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
 from app.data.sql_runner import QueryResult, run_checked_sql
 from app.data.views import VIEW_SCHEMA, load_view_catalog
+from app.db.session import SessionFactory
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ def findings_from_result(
 
 
 async def analytics_node(
-    state: AgentState, session: AsyncSession, engine: AsyncEngine
+    state: AgentState, session_factory: SessionFactory, engine: AsyncEngine
 ) -> AgentState:
     manifest = load_manifest()
     year_of = {entry["id"]: entry.get("year") for entry in manifest}
@@ -98,7 +99,8 @@ async def analytics_node(
         )
         return state
 
-    catalog = await load_view_catalog(session, manifest)
+    async with session_factory() as session:
+        catalog = await load_view_catalog(session, manifest)
     views = [v for base in view_members for v in (base, f"{base}_totals") if v in catalog]
 
     question = task_question(state)

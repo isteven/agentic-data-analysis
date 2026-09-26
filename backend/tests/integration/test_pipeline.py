@@ -107,8 +107,7 @@ def llms(monkeypatch):
 
 
 async def run(question=QUESTION):
-    async with AsyncSessionLocal() as session:
-        return await execute_graph(session, question, uuid.uuid4())
+    return await execute_graph(AsyncSessionLocal, question, uuid.uuid4())
 
 
 def trace_text(state, node=None):
@@ -332,3 +331,18 @@ async def test_a_time_range_question_is_answered_per_period_and_charted_as_a_lin
     assert any(t.startswith("Sent back: the question covers 2018-2020") for t in trace_text(state, "analytics"))
     assert [row[0] for row in state["analysis"]["rows"]] == [2018, 2019, 2020]
     assert (state["analysis"]["chart"]["type"], state["analysis"]["chart"]["x"]) == ("line", "year")
+
+
+async def test_a_late_failure_keeps_the_finished_report(seeded_db, llms):
+    llms["coordinator"] = [("fake", Scripted(plan("retrenchment_by_residential_status")))]
+    llms["analytics"] = [("fake", Scripted(submit(RESIDENTS_2020)))]
+    llms["report_writer"] = [("fake", Scripted(report("14,380 residents were retrenched in 2020.")))]
+    llms["reviewer"] = [("openai", Down())]  # the only provider: the review step fails
+
+    state = await run()
+
+    assert state["report_markdown"].startswith("14,380 residents")  # not thrown away
+    assert state["analysis"]["rows"] == [[2020, 14380]]
+    assert state["status"] == "partial"
+    assert [e["node_name"] for e in state["errors"]] == ["reviewer"]
+    assert any("Step failed (ConnectionError" in t for t in trace_text(state, "reviewer"))
