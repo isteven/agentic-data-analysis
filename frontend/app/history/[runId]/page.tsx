@@ -30,8 +30,7 @@ export default function HistoryDetailPage({ params }: { params: Promise<{ runId:
         <HistorySidebar />
 
         <div className={styles.detailScroll}>
-          <div className={`${shared.column} ${styles.detail}`}>
-            <br />
+          <div className={`${shared.column} ${styles.detail}`}>            
             {/* <Link href="/" className={styles.backLink}>
               ← Back
             </Link> */}
