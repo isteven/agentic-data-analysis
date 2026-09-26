@@ -13,81 +13,20 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Analysis, Cell } from "@/lib/types";
+import { CATEGORY, hasChart, toPoints } from "@/lib/chart-data";
+import type { Analysis } from "@/lib/types";
 import styles from "./ResultChart.module.css";
 
 // Distinct in both light and dark themes; series beyond this wrap around.
 const SERIES_COLORS = ["#5e81ac", "#bf616a", "#a3be8c", "#ebcb8b", "#b48ead", "#88c0d0", "#ac4c78", "#cacdc7"];
-
-type Point = Record<string, Cell>;
-
-// x-axis key when the result has no label column (a bare number): the category is
-// named after the value(s), e.g. a single bar labelled "total".
-const CATEGORY = "__category";
 
 const LONG_LABEL = 12; // characters; longer category labels switch bars to horizontal
 const LABEL_WIDTH = 220;
 const ROW_HEIGHT = 28;
 const MIN_HEIGHT = 288;
 
-/** The rows to draw: a long list is sorted to the end the question is about, then cut. */
-function chartRows(analysis: Analysis): Cell[][] {
-  const { chart, columns, rows } = analysis;
-  if (!chart?.limit) return rows;
-  const yi = columns.indexOf(chart.y[0]);
-  const sorted = chart.sort
-    ? [...rows].sort((a, b) => (Number(a[yi]) - Number(b[yi])) * (chart.sort === "asc" ? 1 : -1))
-    : rows;
-  return sorted.slice(0, chart.limit);
-}
-
-/**
- * Rows as chart points. With a group column, rows are pivoted so each group value
- * becomes its own series: [{year, sex: "Male", v}, {year, sex: "Female", v}]
- * -> [{year, Male: v, Female: v}].
- */
-function toPoints(analysis: Analysis): { points: Point[]; series: string[] } {
-  const { columns, chart } = analysis;
-  const idx = (name: string) => columns.indexOf(name);
-  if (!chart || chart.type === "none" || chart.y.length === 0) return { points: [], series: [] };
-  const rows = chartRows(analysis);
-
-  if (!chart.x) {
-    const points = rows.map((row, i) => ({
-      [CATEGORY]: rows.length > 1 ? String(i + 1) : chart.y.join(", "),
-      ...Object.fromEntries(chart.y.map((c) => [c, row[idx(c)]])),
-    }));
-    return { points, series: chart.y };
-  }
-
-  if (!chart.group) {
-    const points = rows.map((row) => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
-    return { points, series: chart.y };
-  }
-
-  const [xi, gi, yi] = [idx(chart.x), idx(chart.group), idx(chart.y[0])];
-  const byX = new Map<string, Point>();
-  const series: string[] = [];
-  for (const row of rows) {
-    const key = String(row[xi]);
-    const group = String(row[gi]);
-    if (!series.includes(group)) series.push(group);
-    const point = byX.get(key) ?? { [chart.x]: row[xi] };
-    point[group] = row[yi];
-    byX.set(key, point);
-  }
-  return { points: [...byX.values()], series };
-}
-
 const formatNumber = (value: unknown) =>
   typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value);
-
-/** Whether the result has a chart to draw, so callers can skip an empty chart. */
-export function hasChart(analysis: Analysis | null): boolean {
-  const chart = analysis?.chart;
-  if (!analysis || !chart) return false;
-  return toPoints(analysis).points.length > 0;
-}
 
 /** `ref` is forwarded to the chart's container div, so a caller (the export button)
  * can find the rendered <svg> via ref.current.querySelector("svg"). */

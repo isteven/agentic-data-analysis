@@ -3,7 +3,8 @@
 import { useRef, useState } from "react";
 import { AgentTrace } from "@/components/AgentTrace";
 import { Markdown } from "@/components/Markdown";
-import { hasChart, ResultChart } from "@/components/ResultChart";
+import { ResultChart } from "@/components/ResultChart";
+import { hasChart } from "@/lib/chart-data";
 import { ResultTable } from "@/components/ResultTable";
 import { TokenUsage } from "@/components/TokenUsage";
 import { exportChartAsPdf, exportChartAsPng, exportTableAsCsv } from "@/lib/export";

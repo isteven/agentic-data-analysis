@@ -17,14 +17,19 @@ function csvCell(value: Cell): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** The query result table as a downloadable CSV. */
-export function exportTableAsCsv(analysis: Analysis, filename: string) {
+/** The query result table as CSV text (header row first, CRLF line ends). */
+export function toCsv(analysis: Analysis): string {
   const lines = [
     analysis.columns.map(csvCell).join(","),
     ...analysis.rows.map((row) => row.map(csvCell).join(",")),
   ];
+  return lines.join("\r\n");
+}
+
+/** The query result table as a downloadable CSV. */
+export function exportTableAsCsv(analysis: Analysis, filename: string) {
   // Leading BOM so Excel opens it as UTF-8 instead of guessing the system codepage.
-  downloadBlob(new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }), filename);
+  downloadBlob(new Blob(["﻿" + toCsv(analysis)], { type: "text/csv;charset=utf-8" }), filename);
 }
 
 /**
