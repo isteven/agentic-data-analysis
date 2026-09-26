@@ -18,6 +18,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -73,6 +74,14 @@ class ChartSuggestion(BaseModel):
     group: str | None = Field(
         default=None, description="Optional result column splitting rows into one series each"
     )
+    best: Literal["lowest", "highest"] | None = Field(
+        default=None,
+        description=(
+            "For a long list: which end the question is about - 'lowest' (shortest, cheapest, "
+            "fewest) or 'highest' (top, most, longest). Only the first rows of a long list "
+            "are charted, sorted this way."
+        ),
+    )
 
 
 class submit_answer(BaseModel):
@@ -118,6 +127,8 @@ Rules:
 - If a query is rejected, read the message and fix the query.
 - Every answer is charted, so the final result must include the number(s) the answer rests
   on (e.g. the rate a ranking is based on), not only names.
+- When the answer ranks or lists many items ("shortest", "highest", "top"), ORDER BY the
+  measure it ranks by, best first, and set the chart's `best` to that end of the list.
 - In submit_answer, say which result columns to chart (x, y, optional group); the chart
   type is chosen automatically. Chart one kind of measure at a time (counts or rates, not
   both), and include every series the question compares."""

@@ -85,16 +85,21 @@ def _problem(suggestion: dict, labels: list[str], values: list[str], result: Que
 def build_chart_spec(
     suggestion: dict | None, result: QueryResult, catalog: dict[str, list[dict]], views: list[str]
 ) -> dict:
-    """{"type": "line"|"bar"|"none", "x", "y": [...], "group", "limit", "source"}
+    """{"type": "line"|"bar"|"none", "x", "y": [...], "group", "limit", "sort", "source"}
 
     `limit`: draw only the first N rows (too many categories); None = all rows.
+    `sort`: "asc" | "desc" by the first y column before cutting to `limit`, so the chart
+    shows the end of the list the question is about (the planner's `best`) whatever
+    order the SQL returned; None = query order.
     """
     time_columns = {c["column"] for v in views for c in catalog.get(v, []) if c["role"] == "time"}
     numeric = _numeric_columns(result)
     values = [c for c in numeric if c not in time_columns]
     labels = [c for c in result.columns if c not in values]
     if not values or not result.rows:
-        return {"type": "none", "x": None, "y": [], "group": None, "limit": None, "source": "fallback"}
+        return {
+            "type": "none", "x": None, "y": [], "group": None, "limit": None, "sort": None, "source": "fallback"
+        }
 
     problem = _problem(suggestion, labels, values, result) if suggestion else "no suggestion"
     if problem is None:
@@ -109,11 +114,14 @@ def build_chart_spec(
     over_time = x in time_columns
     chart_type = "line" if over_time and _distinct(result, x) >= MIN_LINE_PERIODS else "bar"
     too_many = x is not None and not over_time and _distinct(result, x) > MAX_BAR_CATEGORIES
+    best = (suggestion or {}).get("best")
+    sort = {"lowest": "asc", "highest": "desc"}.get(best) if too_many else None
     return {
         "type": chart_type,
         "x": x,
         "y": _same_scale(result, y),
         "group": group,
         "limit": TOP_CATEGORIES if too_many else None,
+        "sort": sort,
         "source": source,
     }

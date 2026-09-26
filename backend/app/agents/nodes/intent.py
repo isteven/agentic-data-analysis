@@ -43,8 +43,10 @@ class Intent(BaseModel):
         default=None,
         description=(
             "Set when the question looks at a change, trend or comparison across a span of "
-            "periods: the first and last year it covers (open-ended spans end at the latest "
-            "year listed). None when it asks about a single period or no time at all."
+            "periods: the first and last year it covers. Open-ended and relative spans "
+            "(\"since 2015\", \"the last five years\") end at the latest year the relevant "
+            "dataset covers, and count back from it. None when it asks about a single "
+            "period or no time at all."
         ),
     )
 

@@ -113,3 +113,19 @@ def test_a_result_with_no_number_has_no_chart():
     chart = spec(result(["university"], [["NUS"], ["NTU"]]))
 
     assert chart["type"] == "none"
+
+
+def test_a_long_list_is_cut_to_the_end_the_question_cares_about():
+    rows = [[f"station {i}", float(i)] for i in range(MAX_BAR_CATEGORIES + 10)]
+
+    shortest = spec(result(["station", "value"], rows), {"x": "station", "y": ["value"], "best": "lowest"})
+    highest = spec(result(["station", "value"], rows), {"x": "station", "y": ["value"], "best": "highest"})
+
+    assert (shortest["limit"], shortest["sort"]) == (TOP_CATEGORIES, "asc")
+    assert highest["sort"] == "desc"
+
+
+def test_a_short_list_keeps_the_query_order():
+    chart = spec(result(["sex", "value"], [["Male", 2.0], ["Female", 1.0]]), {"x": "sex", "y": ["value"], "best": "lowest"})
+
+    assert chart["sort"] is None

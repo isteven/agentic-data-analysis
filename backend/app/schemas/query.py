@@ -22,6 +22,7 @@ class ChartSpec(BaseModel):
     y: list[str] = []
     group: str | None = None
     limit: int | None = None  # draw only the first N rows (too many categories)
+    sort: str | None = None  # asc | desc by the first y column before cutting to limit
     source: str | None = None  # planner | fallback
 
 
