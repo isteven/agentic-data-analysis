@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { ProvidersInfo } from "@/lib/types";
+import styles from "./Composer.module.css";
 
 const PROVIDER_LABELS: Record<string, string> = { openai: "OpenAI", bedrock: "AWS Bedrock" };
 
@@ -42,7 +43,7 @@ export function Composer({
         e.preventDefault();
         if (canSend) onSubmit();
       }}
-      className="flex items-end gap-2 rounded-3xl border border-zinc-300 bg-white px-4 py-2 shadow-sm focus-within:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900"
+      className={styles.form}
     >
       <textarea
         ref={ref}
@@ -57,7 +58,7 @@ export function Composer({
           }
         }}
         placeholder="Ask about retrenchment, working hours, graduate employment…"
-        className="max-h-[200px] flex-1 resize-none bg-transparent py-1.5 text-[15px] text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100"
+        className={styles.input}
       />
       {providers && (
         <select
@@ -65,7 +66,7 @@ export function Composer({
           onChange={(e) => onProviderChange(e.target.value)}
           aria-label="LLM provider"
           title="LLM provider; another configured provider takes over if this one fails"
-          className="mb-1 rounded-lg bg-transparent px-1 py-1 text-xs text-zinc-500 outline-none hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          className={styles.providerSelect}
         >
           {Object.entries(providers.providers).map(([name, { enabled }]) => (
             <option key={name} value={name} disabled={!enabled}>
@@ -79,9 +80,9 @@ export function Composer({
         type="submit"
         disabled={!canSend}
         aria-label="Send"
-        className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black text-white disabled:opacity-30 dark:bg-white dark:text-black"
+        className={styles.send}
       >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5}>
+        <svg viewBox="0 0 24 24" className={styles.sendIcon} fill="none" stroke="currentColor" strokeWidth={2.5}>
           <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>

@@ -1,0 +1,67 @@
+/* Rendered report markdown. Element styles are set here because the base reset
+   in globals.css strips browser defaults (heading sizes, list bullets). */
+.markdown {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 28px;
+  color: var(--text-body);
+}
+
+.markdown h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.markdown h2 {
+  margin-top: 16px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.markdown h3 {
+  font-weight: 600;
+}
+
+.markdown strong {
+  font-weight: 600;
+}
+
+.markdown a {
+  text-decoration: underline;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li {
+  margin-left: 20px;
+}
+
+.markdown code {
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 0 4px;
+  font-size: 14px;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.markdown th {
+  padding-right: 16px;
+  text-align: left;
+}
+
+.markdown td {
+  border-bottom: 1px solid var(--border);
+  padding-right: 16px;
+}

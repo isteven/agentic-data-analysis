@@ -1,4 +1,5 @@
 import type { Analysis } from "@/lib/types";
+import styles from "./ResultTable.module.css";
 
 const format = (value: unknown) =>
   typeof value === "number"
@@ -12,16 +13,16 @@ export function ResultTable({ analysis }: { analysis: Analysis }) {
   if (analysis.columns.length === 0) return null;
 
   return (
-    <div className="text-sm">
+    <div className={styles.wrapper}>
       {analysis.truncated && (
-        <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">Result truncated at {analysis.rows.length} rows.</p>
+        <p className={styles.truncated}>Result truncated at {analysis.rows.length} rows.</p>
       )}
-      <div className="max-h-96 overflow-auto">
-        <table className="w-full border-collapse text-left">
+      <div className={styles.scroll}>
+        <table className={styles.table}>
           <thead>
             <tr>
               {analysis.columns.map((c) => (
-                <th key={c} className="border-b border-zinc-200 py-1 pr-4 font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+                <th key={c} className={styles.th}>
                   {c}
                 </th>
               ))}
@@ -31,10 +32,7 @@ export function ResultTable({ analysis }: { analysis: Analysis }) {
             {analysis.rows.map((row, r) => (
               <tr key={r}>
                 {row.map((cell, i) => (
-                  <td
-                    key={i}
-                    className={`border-b border-zinc-100 py-1 pr-4 text-zinc-800 dark:border-zinc-800 dark:text-zinc-200 ${typeof cell === "number" ? "tabular-nums" : ""}`}
-                  >
+                  <td key={i} className={typeof cell === "number" ? `${styles.td} ${styles.number}` : styles.td}>
                     {format(cell)}
                   </td>
                 ))}
@@ -42,9 +40,7 @@ export function ResultTable({ analysis }: { analysis: Analysis }) {
             ))}
           </tbody>
         </table>
-        {analysis.sql && (
-          <pre className="mt-3 whitespace-pre-wrap text-xs text-zinc-500 dark:text-zinc-400">{analysis.sql}</pre>
-        )}
+        {analysis.sql && <pre className={styles.sql}>{analysis.sql}</pre>}
       </div>
     </div>
   );
