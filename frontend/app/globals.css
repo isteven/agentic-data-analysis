@@ -22,7 +22,9 @@
   --header-main: #d8b4fe;
 
   /* Surfaces and lines */
-  --surface: #f4f4f5;        /* user bubble, active sidebar item, inline code */
+  --background-sidebar: #fafafa; /* history sidebar, suggestion area */
+  --surface: #f4f4f5;        /* active sidebar item, inline code */
+  --surface-light: #e4e4e7;  /* question bubble */
   --hover-bg: #fafafa;
   --input-bg: #ffffff;
   --border: #e4e4e7;
@@ -58,6 +60,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #341539;
+    --background-sidebar: #2e1632;
     --foreground: #ededed;
 
     --text-body: #f1f1f1;

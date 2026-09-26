@@ -61,13 +61,7 @@ export default function Home() {
 
   return (
     <div className={shared.shell}>
-      <AppHeader>
-        {turns.length > 0 && (
-          <button onClick={() => setTurns([])} disabled={busy} className={shared.outlineButton}>
-            New chat
-          </button>
-        )}
-      </AppHeader>
+      <AppHeader onNewChat={() => setTurns([])} newChatDisabled={busy} />
 
       <div className={shared.shellBody}>
         <HistorySidebar refreshKey={completedCount} />
@@ -89,7 +83,7 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className={`${shared.column} ${styles.turns}`}>              
+              <div className={`${shared.column} ${styles.turns}`}>
                 {turns.map((t) => (
                   <ChatMessage key={t.id} turn={t} />
                 ))}

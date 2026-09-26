@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { ResultTabs } from "@/components/ChatMessage";
 import { AppHeader } from "@/components/AppHeader";
