@@ -28,7 +28,7 @@ Browser (Next.js) ──POST /api/queries──▶ FastAPI ──enqueue──�
 | validator | Checks every number in the report against the result (code, no LLM) |
 | reviewer | Judges whether the answer fits the question; sends it back once if not |
 
-Design, trade-offs and rejected alternatives: [ARCHITECTURE.md](ARCHITECTURE.md).
+Design, trade-offs and rejected alternatives: [ARCHITECTURE.md](ARCHITECTURE.md). Where it would go next, for secure government use: [INNOVATION.md](INNOVATION.md).
 
 ## Run it (Docker Compose)
 
