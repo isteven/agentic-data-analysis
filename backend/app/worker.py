@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 
 from saq import Queue
@@ -13,7 +14,7 @@ from app.agents.trace import (
     trace_stream_key,
 )
 from app.core.config import get_settings
-from app.core.logging import configure_logging
+from app.core.logging import bind_run, configure_logging
 from app.db.session import AsyncSessionLocal
 from app.services.query_service import mark_run_failed, persist_run, run_graph
 
@@ -27,6 +28,13 @@ queue = Queue.from_url(settings.redis_url, name="apda")
 async def run_query_task(
     ctx: dict, *, run_id: str, query_text: str, provider: str | None = None
 ) -> dict:
+    """The SAQ job. Every log line written while it runs - agent steps, LLM calls, SQL
+    rejections - carries this run's id, so a log tool can follow one run end to end."""
+    with bind_run(run_id):
+        return await _run_query(ctx, run_id, query_text, provider)
+
+
+async def _run_query(ctx: dict, run_id: str, query_text: str, provider: str | None) -> dict:
     """Runs the agent graph and appends each trace event to the run's Redis Stream as
     it is emitted (read by GET /api/agent-trace/{run_id}), then persists the run.
 
@@ -34,6 +42,7 @@ async def run_query_task(
     and the stream always gets "done" - otherwise a poller or SSE client waits for a
     run that will never finish.
     """
+    started = time.perf_counter()
     redis = ctx["redis"]
     stream = trace_stream_key(run_id)
     run_uuid = uuid.UUID(run_id)
@@ -70,6 +79,16 @@ async def run_query_task(
 
     status = await _save(run_uuid, query_text, final_state)
     await _close_stream(redis, stream, status, run_id)
+    logger.info(
+        "run finished",
+        extra={
+            "status": status,
+            "duration_ms": round((time.perf_counter() - started) * 1000),
+            "llm_calls": len(final_state.get("llm_calls", [])),
+            "errors": len(final_state.get("errors", [])),
+            "fallbacks": len(final_state.get("fallbacks", [])),
+        },
+    )
     return {"run_id": run_id, "status": status}
 
 
@@ -99,7 +118,7 @@ async def _close_stream(redis, stream: str, status: str, run_id: str) -> None:
 
 
 async def startup(ctx: dict) -> None:
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.log_format)
     ctx["redis"] = queue.redis
 
 

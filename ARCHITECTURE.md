@@ -230,6 +230,11 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 - Live API datasets are fetched in full on every query -> cache them (no dataset uses the API right now).
 - **Measured** (Locust, mocked LLM, TESTING.md): the stack adds under 0.5 s per run; the limit is worker capacity (one worker runs 4 jobs at once, ~0.7 runs/s at ~5 s of LLM time per run), and throughput scales almost linearly with `--scale worker=N` (3 workers: 2.9x). With real LLMs, provider rate limits come first.
 
+### 9.1a Observability
+
+- **Built:** structured logs as the integration point. `LOG_FORMAT=json` makes every line (API, worker, Uvicorn) one JSON object; lines logged during a run carry its `run_id` (a context variable bound by the worker). Events with fields: `http request` (middleware, `app/api/middleware.py`), `llm call` (tokens, model, latency, outcome), `agent step`, `run finished` (status, duration, calls, fallbacks). Per-run detail also lives in `agent_traces` and `llm_calls`.
+- **Not built, by choice:** a metrics/tracing stack (Prometheus + Grafana, OpenTelemetry, LangSmith, alerting). The logs feed any of them directly; LangSmith needs only environment variables. See the Innovation Assessment for the production setup.
+
 ### 9.2 Cost
 
 - **Built:** model tiering (fast / quality); prompts contain findings, never raw data.
