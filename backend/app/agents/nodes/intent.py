@@ -51,6 +51,21 @@ class Intent(BaseModel):
     )
 
 
+# A dimension with at most this many values is listed with them. Without the values the
+# model can't tell a band or category exists: it declined "how many worked 60+ hours" as
+# not in the data, though a "60 Hours & Over" band is. Larger ones (degrees, stations)
+# stay names only, to keep the prompt small.
+MAX_LISTED_VALUES = 12
+
+
+def _dimension(column: dict) -> str:
+    values = column.get("values") or []
+    distinct = column.get("distinct") or len(values)
+    if values and distinct <= MAX_LISTED_VALUES:
+        return f"{column['column']} ({', '.join(str(v) for v in values)})"
+    return column["column"]
+
+
 def _catalog(manifest: list[dict], views: dict[str, list[dict]]) -> str:
     """Title, years covered and what each dataset measures (measures with their
     descriptions, dimension names) - enough to tell "not in the data" from "worded
@@ -73,7 +88,7 @@ def _catalog(manifest: list[dict], views: dict[str, list[dict]]) -> str:
             if c["role"] == "measure"
         )
         dimensions = ", ".join(
-            c["column"] for c in columns if c["role"] == "dimension" and not c.get("level_of")
+            _dimension(c) for c in columns if c["role"] == "dimension" and not c.get("level_of")
         )
         lines.append(f"- {title}; years: {years}; measures: {measures}; by: {dimensions or '-'}")
     return "\n".join(lines)
@@ -111,6 +126,10 @@ async def intent_node(state: AgentState, session: AsyncSession) -> AgentState:
         "(\"layoffs\" -> retrenchment) - never for a different, merely related "
         "one. If what the user asks about isn't what any dataset measures, set "
         "answerable=false - don't answer a nearby question instead.\n"
+        "- Answerable means computable, not \"a column is named for it\": a count, total, "
+        "average or share that can be worked out from a dataset's columns (counting the "
+        "distinct values of a column, adding up the bands of a head-count measure) is "
+        "answerable. Decline only when the subject itself is in no dataset.\n"
         "- Don't answer it; don't add groups, measures or years the user didn't ask about.\n\n"
         f"Datasets:\n{_catalog(manifest, views)}\n\n"
         f"Question: {state['query']}"
