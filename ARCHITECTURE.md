@@ -1,6 +1,6 @@
 # Architecture -- Agentic Policy Data Analytics Platform
 
-> **Living document.** Every section states what is **built** today and what is **planned**. Status as of 2026-09-25: milestone M1 complete, M2 in progress. Async worker wired; live trace served over SSE; frontend still polls.
+> **Living document.** Every section states what is **built** today and what is **planned**. Status as of 2026-09-27: M1-M3 complete (agentic core, tests, CI, docs); M4 (Innovation Assessment, demo) in progress; the one-time AWS deployment (M3.5) not done.
 
 ## 1. Overview
 
@@ -30,7 +30,7 @@ Worker also calls: LLM providers (via one provider factory),
 data.gov.sg Datastore API (client built, no dataset uses it now), local dataset files (backend/data/incoming/).
 ```
 
-**Today:** `POST /api/queries` creates the run (status `running`) and enqueues it on the SAQ worker, returning `202` immediately; `GET /api/queries/{run_id}` polls for the result. The worker appends each trace event to a Redis Stream the moment it is emitted, and `GET /api/agent-trace/{run_id}` relays it to the browser as SSE. The frontend doesn't consume the stream yet.
+**Today:** `POST /api/queries` creates the run (status `running`) and enqueues it on the SAQ worker, returning `202` immediately. The worker appends each trace event to a Redis Stream the moment it is emitted; `GET /api/agent-trace/{run_id}` relays it to the browser as SSE, and the frontend shows the steps live, polling `GET /api/queries/{run_id}` if the stream fails or goes silent.
 
 **Why this shape:** the API process only does fast work (accept a query, serve history, relay the trace stream); the slow work (several LLM calls, data loading) runs in a separate worker, so the API stays responsive and the trace can stream across processes.
 
@@ -38,20 +38,20 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 
 | Layer | Target | Built today | Status |
 |---|---|---|---|
-| Frontend | Next.js + TypeScript, Recharts, TanStack Query | Next.js + TypeScript: one query page with report, chart, data table and agent-trace panel | Partial |
-| Backend API | FastAPI: 202 + background run, SSE, history, export | FastAPI: `POST /api/queries` (202 + worker run), `GET /api/queries/{run_id}` (poll), health routes | Partial |
-| Agent pipeline | LangGraph with loops (SQL retry, quality review) -- section 3.2 | LangGraph, 6 nodes; ReAct SQL planner with gate-checked retries; reviewer loop back to planner / report writer | Partial |
+| Frontend | Next.js + TypeScript, Recharts | Chat page (one question per chat) and History in a shared shell; per answer: Report (chart + text), Data, Agent steps (live), Token usage; exports; Vitest tests | Built |
+| Backend API | FastAPI: 202 + background run, SSE, history | `POST /api/queries` (202 + worker run; rate-limited, validated), `GET /api/queries/{run_id}`, SSE trace, history, liveness + readiness checks (section 7) | Built |
+| Agent pipeline | LangGraph with loops (SQL retry, quality review) | LangGraph, 7 nodes (section 3.1); ReAct SQL planner with gate-checked retries; reviewer loop back to planner / report writer; error boundary per step | Built |
 | Async / queue | SAQ worker on Redis | `run_query_task` built, publishes trace events, and runs every query (`POST /api/queries` enqueues it); `worker` service in Compose | Built |
-| Real-time trace | Redis -> SSE | Worker writes each event to a Redis Stream as emitted; `GET /api/agent-trace/{run_id}` serves it as SSE; frontend not wired yet | Partial |
+| Real-time trace | Redis -> SSE | Worker writes each event to a Redis Stream as emitted; `GET /api/agent-trace/{run_id}` serves it as SSE; the frontend shows it live, with a polling fallback | Built |
 | LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI + Bedrock (Claude via `global.` inference profiles) via one factory; UI picker; automatic per-call fallback, traced. Verified live both ways (Bedrock only; OpenAI key broken -> Bedrock) | Built |
 | Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
-| Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
+| Database | PostgreSQL | PostgreSQL, 8 tables + generated `data` views, Alembic migrations | Built |
 | Visualisations | Charts driven by backend chart specs | Every answer with a number is charted. Code picks the type from the result's shape (time axis with 3+ periods: line; 2 periods, categories or one value: bar; >30 categories: the 15 at the end the question is about); the planner only suggests columns (`app/agents/chart.py`). Time-range questions are answered one row per period. Recharts; long labels as horizontal bars | Built |
 | History / export | History page; PDF / JSON / CSV export | `/history` list + detail page; chart export to PDF, table export to CSV (client-side); no JSON export | Partial |
 | Cost tracking | Tokens per LLM call and per run | Provider-reported tokens per call (`llm_calls`), per-model run totals, returned by the API, shown in a Token usage tab; no dollar estimate (by choice) | Built |
-| Testing | Unit, integration, LLM accuracy / consistency, data quality, load | 62 unit tests | Partial |
-| CI/CD | GitHub Actions | None | Planned |
-| Deployment | Docker Compose (5 services) + one-time validated AWS deploy | Docker Compose, 4 services (no worker yet) | Partial |
+| Testing | Unit, integration, LLM accuracy / consistency, data quality, load | Backend unit + integration (real Postgres), frontend unit (Vitest), LLM evals 24/24, data accuracy against published figures, Locust load test; see TESTING.md | Built |
+| CI/CD | GitHub Actions | CI on every push: backend lint + unit tests, integration tests on a Postgres service, frontend lint + tests + typecheck + build, Docker image builds; LLM evals as a manual workflow. No deployment pipeline | Partial |
+| Deployment | Docker Compose (5 services) + one-time validated AWS deploy | Docker Compose, 5 services, plus opt-in overlays for frontend hot reload and load testing; AWS deploy not done | Partial |
 
 ## 3. Agent design
 
@@ -68,7 +68,7 @@ START -> intent -> coordinator -> extraction -> analytics (ReAct SQL planner) ->
 | **intent** | Yes (quality tier) | Restates the question as one precise reading (a share names its denominator; relative time becomes concrete years), declines what no dataset covers, and returns `time_range` ({start, end}) when the question spans periods, read from its meaning, not keywords (`app/agents/nodes/intent.py`) |
 | **coordinator** | Yes (fast tier) | Reads the dataset catalog (`manifest.yaml`) and picks the datasets relevant to the question (structured output) |
 | **extraction** | No | Checks each chosen dataset is stored, maps it to its typed view, and traces the data-quality facts inferred at ingest (totals/overlaps excluded, unverified periods, summable measures) |
-| **analytics** | Yes (quality tier; fast-tier plans ran out of steps on multi-step questions) | ReAct planner (`app/agents/planner.py`): tools `describe_view`, `sample_rows`, `run_sql`, then `submit_answer(sql, interpretation)` or `cannot_answer`. Max 8 tool calls. Every query goes through the SQL gate and read-only runner; a rejection is an observation the planner fixes. The submitted query's result becomes `Finding`s |
+| **analytics** | Yes (quality tier; fast-tier plans ran out of steps on multi-step questions) | ReAct planner (`app/agents/planner.py`): tools `describe_view`, `sample_rows`, `run_sql`, then `submit_answer(sql, interpretation, chart)` or `cannot_answer`. Max 8 tool calls. Every query goes through the SQL gate and read-only runner; a rejection is an observation the planner fixes. For a question over a time range, a final query without the time column is sent back once. The submitted query's result becomes `Finding`s |
 | **report_writer** | Yes (quality tier) | Writes the report from the query result and findings only, stating how the question was interpreted and citing sources |
 | **validator** | No | Every number in the report must match a finding (1% tolerance); numbers from the question or result labels (cells or column names) count as context. Appends a warning otherwise |
 | **reviewer** | Yes (quality tier) | LLM judge of meaning, not arithmetic: sees the question, what each queried column means, the SQL, result and report. `pass`, `wrong_analysis` (back to analytics) or `poor_report` (back to report_writer), with the reason as feedback. Max 1 re-route; after that the answer keeps a visible caveat |
@@ -77,37 +77,31 @@ START -> intent -> coordinator -> extraction -> analytics (ReAct SQL planner) ->
 
 **Why the reviewer:** the validator proves the report matches the result, not that the result answers the question. Example caught live: "Which gender works longer?" was answered by averaging (then summing) a head-count column; the reviewer sent it back and the re-plan compared each sex across hours bands.
 
-**Still open** (from 3.2): intent rewriting; `wrong_datasets` routing back to the coordinator; units carried into findings.
+**Still open:** `wrong_datasets` routing back to the coordinator; units carried into findings (`Finding.unit` is always empty).
 
-### 3.2 Planned additions
+### 3.2 Principles
 
-| Step | LLM? | Responsibility |
-|---|---|---|
-| Intent | Yes | Rewrite the question precisely ("layoff" -> retrenchment, "past 3 years" -> 2023-2025); reject questions the catalog can't answer |
-| Quality review | Yes | **Built** (planner + report writer routes, section 3.1); routing back to the coordinator for wrong datasets is not |
-
-**Principles:**
 - LLMs interpret the question, choose what to compute and judge the result; **the database computes every number**. No LLM ever re-types data.
 - **Data rules live in the views, not the prompt:** views expose only rows that are safe to add up. A spike showed prompt instructions alone did not stop double-counting; view shape did. The rules are inferred from the data (section 5.5), not written per dataset.
 - Column knowledge comes from the profile made at ingest, so the query path has no hardcoded column names or operation lists.
 
 ### 3.3 Shared state
 
-One `AgentState` (`backend/app/agents/state.py`), shared by all nodes: `query`, `run_id`, `plan`, `raw_extracts` (row counts, columns, source mode), `findings`, `report_markdown`, `grounded`, `trace_events`, `errors`. Dataframes are kept outside the state in a per-run store keyed by `run_id`, so the state stays JSON-serialisable.
+One `AgentState` (`backend/app/agents/state.py`), shared by all nodes and kept JSON-serialisable: the question (`query`, the intent's `intent_query` and `time_range`), `run_id`, `provider`, `plan`, `raw_extracts`, `analysis` (the SQL, its result and chart spec), `findings`, `report_markdown`, `grounded`, `trace_events`, `llm_calls` (token usage), `fallbacks`, `errors`, and the review loop's `review_feedback` / `review_next` / `review_rounds`. No data rows live in the state beyond the final query result.
 
 ### 3.4 Agent trace (ReAct visibility)
 
 Every node calls `emit_trace(state, node, step_type, content)` with `step_type` in `reasoning | action | observation`.
 
-- **Built:** trace events are persisted to `agent_traces` at the end of the run. During the run, the worker installs a trace sink (a context var read by `emit_trace`), so each event -- including every planner tool call -- is appended to the Redis Stream `agent-trace:{run_id}` as it happens, not once per node.
+- **Built:** trace events are persisted to `agent_traces` at the end of the run, numbered in emission order (`seq`). During the run, the worker installs a trace sink (a context var read by `emit_trace`), so each event -- including every planner tool call -- is appended to the Redis Stream `agent-trace:{run_id}` as it happens, not once per node.
 - **Built:** `GET /api/agent-trace/{run_id}` (SSE): `trace` events, then `done` with the run status. Reads the stream from the start, so a late subscriber misses nothing; the stream expires 1 h after the run, after which the route replays from `agent_traces`. Gives up after 10 min if a crashed worker never writes `done`.
 - **Why a Stream, not pub/sub:** pub/sub keeps nothing, and the first events fire before the browser can subscribe, so they'd be lost.
-- **Built:** `POST /api/queries` enqueues `run_query_task` and returns `202` + `run_id`; `GET /api/queries/{run_id}` polls `analysis_runs` + `agent_traces` for the result (this is the "fallback if the stream drops" path once SSE exists, and the only path today).
-- **Planned:** the frontend consumes the SSE stream (steps appear live), polling `GET /api/queries/{run_id}` as the fallback.
+- **Built:** the frontend follows the stream (`lib/runs.ts`): steps appear live; if the stream errors or is silent for 45 s it polls `GET /api/queries/{run_id}`; after 5 minutes it gives up. Following can be cancelled (New Chat, leaving the page); the run itself still finishes on the server.
 
 ### 3.5 Failure handling
 
-- **Built:** each dataset loads in its own try/except, so one failure doesn't stop the others; a failed live API call falls back to the cached file and is tagged `file_fallback` in the trace; any graph exception ends the run with status `failed`, and a partial result is still saved; no matching dataset gives status `partial` with an honest explanation.
+- **Built:** each graph step has an error boundary (`guarded`, `app/agents/graph.py`): a failure is logged, recorded and traced, and the run continues with what's done (e.g. a reviewer failure keeps the finished report; the run ends `partial`). A missing dataset is reported without stopping the others; no matching dataset gives `partial` with an honest explanation.
+- **Built:** every run ends. The worker saves in a fresh session; if saving fails the run is marked `failed`; the trace stream always gets `done`; a job timeout saves the run as `failed`. If the queue is unreachable, `POST /api/queries` marks the run `failed` and returns 503.
 - **Built:** gate-rejected or failing SQL is returned to the planner as an observation; the planner can decline (`cannot_answer`) and the run ends `partial` with the reason.
 - **Built:** automatic LLM provider fallback, per call (4.2).
 - **Built:** quality review sends a wrong analysis or a poor report back to the step that caused it, once; a second failure keeps the answer with a caveat.
@@ -153,7 +147,7 @@ The files are curated mock data derived from public downloads. Details and known
 
 ### 5.3 Loading and cleaning
 
-- **Parsers:** `csv_parser.py` (pandas; digit strings with a leading zero stay text, e.g. postal codes); `excel_parser.py` (openpyxl, built for the MOM F2 layout); `api_client.py` (data.gov.sg Datastore Search, pagination, 2 attempts with timeout).
+- **Parsers:** `csv_parser.py` (pandas; digit strings with a leading zero stay text, e.g. postal codes); `excel_parser.py` (openpyxl, built for the MOM F2 layout); `api_client.py` (data.gov.sg Datastore Search, pagination, 2 attempts with timeout; built, but no current dataset uses `mode: api`).
 - **Missing values:** `-`, `na`, `N.A.` and similar become missing, never 0.
 - **Cleaning at ingest** (`app/data/cleaning.py`): adds `year` from the manifest where a file has none.
 
@@ -189,9 +183,9 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 |---|---|---|
 | `datasets` | Catalog row per dataset: source, mode, file path, content hash, `quality_report` (incl. profiler version) and `schema_profile` (JSON, incl. inferred structure) | Yes |
 | `dataset_records` | Every cleaned source row as a JSONB document; read through the generated views in the `data` schema | Written by seeding; read by the SQL planner through the views |
-| `analysis_runs` | One per query: text, status, provider, report, `token_usage` (per-model totals) | Yes; `session_id`, `query_hash`, `estimated_cost_usd` columns reserved for planned features |
+| `analysis_runs` | One per query: text, status, provider, report, the analysis (SQL, result, chart spec; column `chart_specs`), `token_usage` (per-model totals) | Yes; `session_id`, `query_hash`, `estimated_cost_usd` reserved (dollar costs deliberately not computed, section 9.2) |
 | `analysis_run_datasets` | Which datasets a run used | Yes |
-| `agent_traces` | Persisted trace events | Yes |
+| `agent_traces` | Persisted trace events, in order (`seq`) | Yes |
 | `llm_calls` | One row per LLM attempt: node, tier, provider, model, input / output / cached input tokens, latency, outcome | Yes |
 | `findings` | Computed values with dataset and field reference | Yes |
 | `sessions` | Chat sessions | Reserved (planned chat UI) |
@@ -200,7 +194,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 | Endpoint | Status | Purpose |
 |---|---|---|
-| `POST /api/queries` | Built (synchronous) -> planned: returns `202` + `run_id` | Submit a question |
+| `POST /api/queries` | Built | Submit a question: `202` + `run_id`, run on the worker. Rate-limited per client IP (429); question 1-2,000 characters and provider `openai` / `bedrock` only (422); 503 if the queue is down |
 | `GET /api/health`, `GET /api/health/providers` | Built | Liveness (the API process only); which providers are configured |
 | `GET /api/health/ready` | Built | Readiness: Postgres, Redis and a live worker, 2 s timeout each, run together; 200 or 503 naming what's down |
 | `GET /api/queries/{run_id}` | Built | Poll result (fallback if the stream drops); includes `token_usage` (per-model totals + each call) once the run finishes |
@@ -212,9 +206,10 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 ## 8. Frontend
 
-- **Built:** a chat-style query interface (`frontend/app/page.tsx`) with a provider picker; each answer has up to four tabs: Report (chart from `components/ResultChart.tsx`, Recharts, above the report text), Data (query result table, `components/ResultTable.tsx`), Agent steps (`components/AgentTrace.tsx`) and Token usage (`components/TokenUsage.tsx`: totals per model and each LLM call, as the provider reported them; shown once a run has usage). Agent steps stream live over SSE while a run is in progress (`lib/runs.ts`), falling back to polling `GET /api/queries/{run_id}` if the stream drops. `/history` lists past runs; `/history/{runId}` shows the full result. Report tab has Export PNG / PDF for the chart (SVG rasterized; PDF via `jspdf`); Data tab has Export CSV (client-side, no backend export endpoint).
+- **Built:** a shell (`components/AppShell.tsx`, rendered once by `app/(app)/layout.tsx`) with the header, New Chat and the History sidebar, kept across navigation. The chat page (`app/(app)/page.tsx`) holds one question per chat, with a provider picker; each answer has up to four tabs: Report (chart from `components/ResultChart.tsx`, Recharts, above the report text), Data (query result table, `components/ResultTable.tsx`), Agent steps (`components/AgentTrace.tsx`) and Token usage (`components/TokenUsage.tsx`: totals per model and each LLM call, as the provider reported them; shown once a run has usage). Agent steps stream live over SSE while a run is in progress (`lib/runs.ts`), falling back to polling `GET /api/queries/{run_id}` if the stream drops. New Chat works mid-run (stops following it; the run finishes on the server). `/history` lists past runs; `/history/{runId}` shows the full result. Chart colours are theme tokens (`--chart-*` in `app/globals.css`), light and dark. Report tab has Export PNG / PDF for the chart (SVG rasterized; PDF via `jspdf`); Data tab has Export CSV (client-side, no backend export endpoint).
 - **Planned:** citations panel; data-quality panel; JSON export; follow-up questions using earlier turns as context (needs the session-id backend work in `project-management.md`'s M2.3, not yet done).
-- **State:** TanStack Query for server data; no global state library (no need for one at this size).
+- **State:** plain `fetch` in effects, each cancelled on cleanup (`AbortController`); a small context for the shell (History refresh). No data-fetching or global state library: not needed at this size.
+- **Tests:** Vitest + Testing Library (chart data rules, tabs, token usage, run following, New Chat, shell).
 
 ## 9. Non-functional requirements
 
@@ -224,11 +219,12 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 **Fixed now that the worker is wired:** the run row is created at submit time with status `running` (`create_run()`), so a poll or the history page can find it immediately.
 
+**Fixed:** nodes open a short session per database read, so no transaction stays open across LLM calls (measured: 1 idle-in-transaction connection per run before, 0 after).
+
 **Still open:**
 
-- pandas and openpyxl run on the async event loop inside the worker, so one run's computation stalls the others in the same process (SAQ concurrency 4) -> move to a thread.
-- One database session is held for the whole run, including LLM calls -> use short-lived sessions.
-- Live API datasets are fetched in full on every query -> cache them (no dataset uses the API right now).
+- Seeding (pandas, openpyxl, structure inference) runs on the API's event loop at startup; move it to a thread or a one-off job.
+- Views are rebuilt (`DROP SCHEMA data`) on every backend start, which can break planner queries in flight.
 - **Measured** (Locust, mocked LLM, TESTING.md): the stack adds under 0.5 s per run; the limit is worker capacity (one worker runs 4 jobs at once, ~0.7 runs/s at ~5 s of LLM time per run), and throughput scales almost linearly with `--scale worker=N` (3 workers: 2.9x). With real LLMs, provider rate limits come first.
 
 ### 9.1a Observability
@@ -252,25 +248,25 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 ## 10. Deployment
 
-- **Built:** `infra/docker-compose.yml` runs `db` (postgres:16), `redis` (redis:7), `backend` and `frontend`; startup migrates and seeds automatically. Each service has its own `.env` (copy from `.env.example`); there is no root `.env`.
-- **Planned:** a `worker` service (same backend image); a one-time AWS deployment (ECS/Fargate, RDS, ElastiCache, Secrets Manager) to validate the deployment docs, then torn down; the grader's path stays local Docker Compose.
+- **Built:** `infra/docker-compose.yml` runs `db` (postgres:16), `redis` (redis:7), `backend`, `worker` (same image, SAQ command; scale with `--scale worker=N`) and `frontend`; startup migrates and seeds automatically. Opt-in overlays: `docker-compose.dev.yml` (frontend hot reload) and `docker-compose.loadtest.yml` (mock LLM, separate database). Each service has its own `.env` (copy from `.env.example`); there is no root `.env`.
+- **Planned:** a one-time AWS deployment (ECS/Fargate, RDS, ElastiCache, Secrets Manager) to validate the deployment docs, then torn down; the grader's path stays local Docker Compose.
 
 ## 11. Milestones
 
 | Milestone | Scope | Status |
 |---|---|---|
 | M1 | Walking skeleton: seeded data, one LLM call, minimal UI, Docker Compose | Done |
-| M2 | Agentic core: real pipeline, live API, worker + SSE, Bedrock + fallback, dashboard, history, cost tracking | In progress |
-| M3 | Tests (incl. LLM accuracy and load), CI, docs (README, TESTING) | Not started |
+| M2 | Agentic core: real pipeline, worker + SSE, Bedrock + fallback, dashboard, history, token tracking | Done |
+| M3 | Tests (incl. LLM accuracy and load), CI, docs (README, TESTING) | Done |
 | M3.5 | One-time AWS deployment validation | Not started |
-| M4 | Polish, bonus items, Innovation Assessment, demo rehearsal | Not started |
+| M4 | Polish, bonus items, Innovation Assessment, demo rehearsal | In progress (code-review fixes and observability done) |
 
 ## 12. Key decisions
 
 | Decision | Choice | Why |
 |---|---|---|
 | Agent framework | LangGraph | The planned retry and review loops need conditional edges; state is inspectable at every step |
-| Agent count | 5 now (3 required + report writer + validator), growing with the redesign | "What the data says" and "how to explain it" fail differently; the validator is the hallucination check |
+| Agent count | 7 nodes: 5 use an LLM (intent, coordinator, analytics, report writer, reviewer), 2 are code (extraction, validator) | Each failure mode gets its own step: reading the question, choosing data, computing, explaining, checking numbers (code), checking meaning (LLM) |
 | Who computes numbers | The database (LLM-written SQL, checked before running), never an LLM | Every number stays verifiable |
 | Query language | Checked SQL over generated views, not a custom plan vocabulary | A custom vocabulary is our own capability list to maintain; SQL is standard and LLMs are fluent in it. Checks + view shape keep it safe (spike: valid SQL 12-14/14 first try) |
 | Task queue | SAQ (Redis) | Async-native; Celery is too heavy; arq is in maintenance mode |
@@ -281,7 +277,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 | Source mode | Per dataset, in the manifest | Reliability differs by dataset, not by question; live API only for pre-vetted tables, with file fallback |
 | LLM providers | OpenAI + AWS Bedrock | Bedrock is a real cloud platform, a literal answer to "multi-cloud" |
 | Provider switching vs. fallback | Both, separately | The brief asks for both |
-| Frontend state | TanStack Query, no global store | Nothing needs one at this size |
+| Frontend state | Plain fetches (cancelled on cleanup) and a small shell context; no data or state library | Nothing needs one at this size |
 | Hosting | Local Docker Compose + one-time validated AWS deploy | Hosting isn't required; the docs still get tested against a real deployment |
 
 ## 13. Future work
