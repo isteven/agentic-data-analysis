@@ -53,7 +53,7 @@ function toPoints(analysis: Analysis): { points: Point[]; series: string[] } {
 const formatNumber = (value: unknown) =>
   typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value);
 
-/** Whether the result has a chart to draw, so callers can hide an empty chart tab. */
+/** Whether the result has a chart to draw, so callers can skip an empty chart. */
 export function hasChart(analysis: Analysis | null): boolean {
   const chart = analysis?.chart;
   if (!analysis || !chart || chart.type === "none" || !chart.x) return false;

@@ -25,7 +25,7 @@ const STATUS_NOTES: Record<string, string> = {
   failed: "The run failed — see the agent steps for details.",
 };
 
-type TabId = "report" | "steps" | "chart" | "data";
+type TabId = "report" | "data" | "steps";
 
 interface Tab {
   id: TabId;
@@ -33,24 +33,21 @@ interface Tab {
 }
 
 /** Only tabs with content; a failed run may have steps but no report, chart or data. */
-function availableTabs(result: QueryResponse): Tab[] {
+function availableTabs(result: QueryResponse, withChart: boolean): Tab[] {
   const tabs: Tab[] = [];
-  if (result.report_markdown) tabs.push({ id: "report", label: "Report" });
-  if (result.trace.length > 0) tabs.push({ id: "steps", label: `Agent steps (${result.trace.length})` });
-  if (hasChart(result.analysis)) tabs.push({ id: "chart", label: "Chart" });
+  if (withChart || result.report_markdown) tabs.push({ id: "report", label: "Report" });
   if (result.analysis && result.analysis.columns.length > 0) {
     tabs.push({ id: "data", label: `Data (${result.analysis.rows.length})` });
   }
+  if (result.trace.length > 0) tabs.push({ id: "steps", label: `Agent steps (${result.trace.length})` });
   return tabs;
 }
 
 /** Exported for reuse on the history detail view, outside the chat-bubble layout. */
 export function ResultTabs({ query, result }: { query: string; result: QueryResponse }) {
-  const tabs = availableTabs(result);
-  // Chart first when there is one (the visual answer), else the report.
-  const [active, setActive] = useState<TabId | undefined>(
-    tabs.find((t) => t.id === "chart")?.id ?? tabs.find((t) => t.id === "report")?.id ?? tabs[0]?.id,
-  );
+  const withChart = hasChart(result.analysis);
+  const tabs = availableTabs(result, withChart);
+  const [active, setActive] = useState<TabId | undefined>(tabs[0]?.id);
   const [exporting, setExporting] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
   const baseName = slugify(query);
@@ -86,7 +83,7 @@ export function ResultTabs({ query, result }: { query: string; result: QueryResp
             </button>
           ))}
         </div>
-        {active === "chart" && (
+        {active === "report" && withChart && (
           <div className={styles.exportActions}>
             {(["png", "pdf"] as const).map((format) => (
               <button
@@ -110,10 +107,14 @@ export function ResultTabs({ query, result }: { query: string; result: QueryResp
         )}
       </div>
       <div role="tabpanel" className={styles.tabPanel}>
-        {active === "report" && result.report_markdown && <Markdown>{result.report_markdown}</Markdown>}
-        {active === "steps" && <AgentTrace steps={result.trace} />}
-        {active === "chart" && result.analysis && <ResultChart ref={chartRef} analysis={result.analysis} />}
+        {active === "report" && (
+          <div className={styles.report}>
+            {withChart && result.analysis && <ResultChart ref={chartRef} analysis={result.analysis} />}
+            {result.report_markdown && <Markdown>{result.report_markdown}</Markdown>}
+          </div>
+        )}
         {active === "data" && result.analysis && <ResultTable analysis={result.analysis} />}
+        {active === "steps" && <AgentTrace steps={result.trace} />}
       </div>
     </div>
   );

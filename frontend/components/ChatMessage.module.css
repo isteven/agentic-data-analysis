@@ -64,6 +64,13 @@
   opacity: 0.4;
 }
 
+/* Report tab: chart on top, report text below. */
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
 .tabPanel {
   padding-top: 16px;  
 }

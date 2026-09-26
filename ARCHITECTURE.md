@@ -209,7 +209,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 ## 8. Frontend
 
-- **Built:** a chat-style query interface (`frontend/app/page.tsx`) with a provider picker; each answer shows the report, chart (`components/ResultChart.tsx`, Recharts) and query result table (`components/ResultTable.tsx`) in tabs, plus the agent-trace panel (`components/AgentTrace.tsx`). Agent steps stream live over SSE while a run is in progress (`lib/runs.ts`), falling back to polling `GET /api/queries/{run_id}` if the stream drops. `/history` lists past runs; `/history/{runId}` shows the full result. Chart tab has an Export PDF button (SVG rasterized to a PDF via `jspdf`); Data tab has Export CSV (client-side, no backend export endpoint).
+- **Built:** a chat-style query interface (`frontend/app/page.tsx`) with a provider picker; each answer has three tabs: Report (chart from `components/ResultChart.tsx`, Recharts, above the report text), Data (query result table, `components/ResultTable.tsx`) and Agent steps (`components/AgentTrace.tsx`). Agent steps stream live over SSE while a run is in progress (`lib/runs.ts`), falling back to polling `GET /api/queries/{run_id}` if the stream drops. `/history` lists past runs; `/history/{runId}` shows the full result. Report tab has Export PNG / PDF for the chart (SVG rasterized; PDF via `jspdf`); Data tab has Export CSV (client-side, no backend export endpoint).
 - **Planned:** citations panel; data-quality panel; JSON export; follow-up questions using earlier turns as context (needs the session-id backend work in `project-management.md`'s M2.3, not yet done).
 - **State:** TanStack Query for server data; no global state library (no need for one at this size).
 
