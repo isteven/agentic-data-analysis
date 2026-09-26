@@ -1,24 +1,30 @@
 import logging
+import time
 from collections.abc import Callable
 from typing import Any, Literal
 
+from langchain_core.callbacks import BaseCallbackManager
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import Runnable
 
 from app.core.config import get_settings
 from app.llm.config import ProviderName
+from app.llm.usage import CallUsage, Outcome, UsageCollector
 
 logger = logging.getLogger(__name__)
 
 Tier = Literal["fast", "quality"]
 # (failed provider, provider retried on, the error) -> None
 FallbackHook = Callable[[str, str, Exception], None]
+# Called once per attempt, successful or not.
+UsageHook = Callable[[CallUsage], None]
 
 
 def get_chat_model(
     provider: ProviderName | None = None,
     model_tier: Tier = "quality",
     on_fallback: FallbackHook | None = None,
+    on_usage: UsageHook | None = None,
 ) -> "FallbackChatModel":
     """The requested provider, backed by the fallback and then the default provider.
 
@@ -42,7 +48,7 @@ def get_chat_model(
         raise RuntimeError("No LLM provider is configured. " + " ".join(skipped))
     if skipped:
         logger.info("LLM providers skipped (not configured): %s", "; ".join(skipped))
-    return FallbackChatModel(models, on_fallback)
+    return FallbackChatModel(models, on_fallback, on_usage)
 
 
 def build_provider(provider: ProviderName, model_tier: Tier) -> BaseChatModel:
@@ -69,16 +75,24 @@ class FallbackChatModel:
         self,
         models: list[tuple[str, Runnable]],
         on_fallback: FallbackHook | None = None,
+        on_usage: UsageHook | None = None,
+        configured_models: list[str | None] | None = None,
     ):
         self._models = models
         self._on_fallback = on_fallback
+        self._on_usage = on_usage
+        # Read before any wrapping (bind_tools etc.), which hides the model's attributes.
+        # Reported for an attempt that failed before any response named the model.
+        self._configured = configured_models or [_configured_model(m) for _, m in models]
 
     @property
     def providers(self) -> list[str]:
         return [name for name, _ in self._models]
 
     def _derive(self, fn: Callable[[Any], Runnable]) -> "FallbackChatModel":
-        return FallbackChatModel([(n, fn(m)) for n, m in self._models], self._on_fallback)
+        return FallbackChatModel(
+            [(n, fn(m)) for n, m in self._models], self._on_fallback, self._on_usage, self._configured
+        )
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> "FallbackChatModel":
         return self._derive(lambda m: m.bind_tools(tools, **kwargs))
@@ -89,11 +103,16 @@ class FallbackChatModel:
     async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
         last_error: Exception | None = None
         for i, (name, model) in enumerate(self._models):
+            collector = UsageCollector()
+            started = time.perf_counter()
             try:
-                return await model.ainvoke(input, config, **kwargs)
+                result = await model.ainvoke(input, _with_callback(config, collector), **kwargs)
+                self._report(name, i, collector, started, "ok")
+                return result
             # Any provider error counts (auth, rate limit after the SDK's own retries,
             # outage, malformed structured output): the other provider may still answer.
             except Exception as e:  # noqa: BLE001 - see comment above
+                self._report(name, i, collector, started, "failed")
                 last_error = e
                 if i + 1 < len(self._models):
                     next_name = self._models[i + 1][0]
@@ -108,6 +127,45 @@ class FallbackChatModel:
                         self._on_fallback(name, next_name, e)
         assert last_error is not None
         raise last_error
+
+    def _report(
+        self, provider: str, index: int, collector: UsageCollector, started: float, outcome: Outcome
+    ) -> None:
+        if self._on_usage is None:
+            return
+        usage: CallUsage = {
+            "provider": provider,
+            "model": collector.model or self._configured[index],
+            "input_tokens": collector.input_tokens,
+            "output_tokens": collector.output_tokens,
+            "cached_input_tokens": collector.cached_input_tokens,
+            "latency_ms": round((time.perf_counter() - started) * 1000),
+            "outcome": outcome,
+        }
+        try:
+            self._on_usage(usage)
+        except Exception:  # recording usage must never fail the LLM call itself
+            logger.exception("[DEBUG] token usage hook failed provider=%s", provider)
+
+
+def _with_callback(config: Any, handler: UsageCollector) -> dict:
+    """The caller's config with the collector added to (not replacing) its callbacks."""
+    config = dict(config or {})
+    existing = config.get("callbacks")
+    if existing is None:
+        config["callbacks"] = [handler]
+    elif isinstance(existing, BaseCallbackManager):
+        manager = existing.copy()
+        manager.add_handler(handler, inherit=True)
+        config["callbacks"] = manager
+    else:
+        config["callbacks"] = [*existing, handler]
+    return config
+
+
+def _configured_model(model: Any) -> str | None:
+    """Model id a provider was built with (ChatOpenAI.model_name, ChatBedrockConverse.model_id)."""
+    return getattr(model, "model_name", None) or getattr(model, "model_id", None)
 
 
 def _build_openai(settings, model_tier: Tier) -> BaseChatModel:
