@@ -134,10 +134,11 @@ async def persist_run(
             session.add(AnalysisRunDataset(run_id=run_id, dataset_id=dataset_pk))
 
     trace_events = final_state.get("trace_events", [])
-    for event in trace_events:
+    for seq, event in enumerate(trace_events):
         session.add(
             AgentTrace(
                 run_id=run_id,
+                seq=seq,
                 node_name=event["node_name"],
                 step_type=event["step_type"],
                 content=event["content"],
@@ -174,7 +175,7 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> tuple[AnalysisRun
     if run is None:
         return None
     trace_rows = await session.scalars(
-        select(AgentTrace).where(AgentTrace.run_id == run_id).order_by(AgentTrace.created_at)
+        select(AgentTrace).where(AgentTrace.run_id == run_id).order_by(AgentTrace.seq)
     )
     trace_events = [
         {"node_name": t.node_name, "step_type": t.step_type, "content": t.content} for t in trace_rows

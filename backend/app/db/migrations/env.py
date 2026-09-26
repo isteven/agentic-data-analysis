@@ -13,8 +13,11 @@ config = context.config
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# alembic.ini's logging is for the Alembic CLI. The app runs migrations at startup with
+# its own logging (app/core/logging.py) and sets configure_logger=False: fileConfig()
+# would reset the root level to WARN and disable every app logger already created.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

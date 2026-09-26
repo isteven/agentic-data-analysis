@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -8,6 +9,8 @@ from sqlalchemy import delete, exists, insert, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.data.cleaning import clean_dataset
 from app.data.manifest import DATA_ROOT, load_manifest
 from app.data.parsers.csv_parser import read_csv
@@ -20,6 +23,8 @@ from app.models.analysis_run import AnalysisRunDataset
 from app.models.dataset import Dataset
 from app.models.dataset_record import DatasetRecord
 from app.models.finding import Finding
+
+logger = logging.getLogger(__name__)
 
 
 def manifest_entry_hash(entry: dict) -> str:
@@ -45,7 +50,7 @@ def build_dataframe(entry: dict):
     before = len(df)
     df = clean_dataset(df, entry)
     if len(df) != before:
-        print(f"  cleaning rules applied (manifest): {before} -> {len(df)} rows")
+        logger.info("cleaning rules applied (manifest): %s -> %s rows", before, len(df))
 
     return df
 
@@ -59,12 +64,12 @@ def _has_seedable_file(entry: dict) -> bool:
 
 async def seed_dataset(session, entry: dict) -> None:
     if not _has_seedable_file(entry):
-        print(f"skip {entry['id']}: mode={entry.get('mode')}, no file fallback configured")
+        logger.info("skip %s: mode=%s, no file fallback configured", entry["id"], entry.get("mode"))
         return
 
     path = DATA_ROOT / entry["file_path"]
     if not path.exists():
-        print(f"skip {entry['id']}: source file not found at {path}")
+        logger.warning("skip %s: source file not found at %s", entry["id"], path)
         return
 
     hash_ = content_hash(path)
@@ -81,13 +86,13 @@ async def seed_dataset(session, entry: dict) -> None:
         and (existing.quality_report or {}).get("manifest_hash") == entry_hash
         and await _has_records(session, existing.id)
     ):
-        print(f"skip {entry['id']}: already seeded, content unchanged")
+        logger.info("skip %s: already seeded, content unchanged", entry["id"])
         return
 
     try:
         df = build_dataframe(entry)
     except NotImplementedError as exc:
-        print(f"skip {entry['id']}: {exc}")
+        logger.warning("skip %s: %s", entry["id"], exc)
         return
 
     quality_report = {
@@ -122,8 +127,11 @@ async def seed_dataset(session, entry: dict) -> None:
     await session.flush()  # assigns existing.id for a new dataset
     await _replace_records(session, existing.id, df)
     await session.commit()
-    print(
-        f"seeded {entry['id']}: {quality_report['row_count']} rows, {quality_report['column_count']} columns"
+    logger.info(
+        "seeded %s: %s rows, %s columns",
+        entry["id"],
+        quality_report["row_count"],
+        quality_report["column_count"],
     )
 
 
@@ -158,10 +166,10 @@ async def prune_removed_datasets(session, manifest: list[dict]) -> None:
             )
         )
         if cited:
-            print(f"pruned rows of {dataset.dataset_key}: not in manifest, kept for past runs")
+            logger.info("pruned rows of %s: not in manifest, kept for past runs", dataset.dataset_key)
         else:
             await session.delete(dataset)
-            print(f"pruned {dataset.dataset_key}: not in manifest")
+            logger.info("pruned %s: not in manifest", dataset.dataset_key)
     await session.commit()
 
 
@@ -175,8 +183,9 @@ async def main() -> None:
         # manifest and profiles even when no dataset changed.
         views = await rebuild_views(session, manifest)
         await session.commit()
-        print(f"views rebuilt in schema data: {', '.join(views)}")
+        logger.info("views rebuilt in schema data: %s", ", ".join(views))
 
 
 if __name__ == "__main__":
+    configure_logging(get_settings().log_level)
     asyncio.run(main())

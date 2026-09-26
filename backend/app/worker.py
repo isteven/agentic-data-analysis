@@ -13,6 +13,7 @@ from app.agents.trace import (
     trace_stream_key,
 )
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.db.session import AsyncSessionLocal
 from app.services.query_service import mark_run_failed, persist_run, run_graph
 
@@ -98,6 +99,7 @@ async def _close_stream(redis, stream: str, status: str, run_id: str) -> None:
 
 
 async def startup(ctx: dict) -> None:
+    configure_logging(settings.log_level)
     ctx["redis"] = queue.redis
 
 
