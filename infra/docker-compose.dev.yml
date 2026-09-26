@@ -1,0 +1,25 @@
+# Dev-mode overlay: hot reload for the frontend. Opt-in, so a plain
+# `docker compose up` (what the grader runs) stays the production build:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# Host source is bind-mounted in, so edits apply without a rebuild.
+services:
+  frontend:
+    build:
+      target: dev
+    volumes:
+      - ../frontend:/app
+      # Named volumes so the bind mount above doesn't shadow the
+      # container's own node_modules/.next with the host's (or nothing, if
+      # `npm install` was never run on the host).
+      - frontend_node_modules:/app/node_modules
+      - frontend_next_cache:/app/.next
+    # Webpack, not Turbopack: host file events don't reach the container, and
+    # Turbopack's poll watcher (Next 16.3) never picked up edits in testing,
+    # while webpack's WATCHPACK_POLLING does.
+    command: ["npx", "next", "dev", "--webpack"]
+    environment:
+      WATCHPACK_POLLING: "true"
+
+volumes:
+  frontend_node_modules:
+  frontend_next_cache:
