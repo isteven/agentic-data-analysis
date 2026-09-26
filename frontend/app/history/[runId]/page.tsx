@@ -15,12 +15,15 @@ export default function HistoryDetailPage({ params }: { params: Promise<{ runId:
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchRun(runId)
+    const controller = new AbortController();
+    fetchRun(runId, controller.signal)
       .then(setResult)
       .catch((err) => {
+        if (controller.signal.aborted) return;
         console.error(`[DEBUG] ${new Date().toISOString()} run fetch failed`, { runId, err });
         setError(err instanceof Error ? err.message : "Something went wrong");
       });
+    return () => controller.abort();
   }, [runId]);
 
   return (
