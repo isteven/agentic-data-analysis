@@ -1,0 +1,56 @@
+/* Styles used by more than one page. */
+
+/* Full-height frame: app header on top, sidebar + content below. */
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--background);
+}
+
+.shellBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Centred reading column. */
+.column {
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.outlineButton {
+  display: inline-block;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.outlineButton:hover {
+  background: var(--surface);
+}
+
+.outlineButton:disabled {
+  opacity: 0.4;
+}
+
+.pageTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.error {
+  font-size: 14px;
+  color: var(--danger);
+}
+
+.muted {
+  font-size: 14px;
+  color: var(--text-muted);
+}

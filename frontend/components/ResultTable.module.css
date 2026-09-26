@@ -1,0 +1,44 @@
+.wrapper {
+  font-size: 14px;
+}
+
+.truncated {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--warning-text);
+}
+
+.scroll {
+  max-height: 384px;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.th {
+  border-bottom: 1px solid var(--border);
+  padding: 4px 16px 4px 0;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.td {
+  border-bottom: 1px solid var(--divider);
+  padding: 4px 16px 4px 0;
+  color: var(--text-body);
+}
+
+.number {
+  font-variant-numeric: tabular-nums;
+}
+
+.sql {
+  margin-top: 12px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+}

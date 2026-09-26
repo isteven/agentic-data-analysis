@@ -7,6 +7,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { API_URL, submitQuery, watchRun } from "@/lib/runs";
 import type { ChatTurn, ProvidersInfo } from "@/lib/types";
+import shared from "@/components/shared.module.css";
+import styles from "./page.module.css";
 
 const SUGGESTIONS = [
   "How did retrenchment of residents and non-residents change since 2015?",
@@ -58,46 +60,36 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white dark:bg-zinc-950">
+    <div className={shared.shell}>
       <AppHeader>
         {turns.length > 0 && (
-          <button
-            onClick={() => setTurns([])}
-            disabled={busy}
-            className="rounded-lg border border-zinc-300 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
+          <button onClick={() => setTurns([])} disabled={busy} className={shared.outlineButton}>
             New chat
           </button>
         )}
       </AppHeader>
 
-      <div className="flex min-h-0 flex-1">
+      <div className={shared.shellBody}>
         <HistorySidebar refreshKey={completedCount} />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <main className="flex-1 overflow-y-auto">
+        <div className={styles.main}>
+          <main className={styles.scroll}>
             {turns.length === 0 ? (
-              <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4">
-                <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-                  What would you like to analyse?
-                </h2>
-                <p className="mt-2 text-sm text-zinc-500">
+              <div className={`${shared.column} ${styles.welcome}`}>
+                <h2 className={styles.welcomeTitle}>What would you like to analyse?</h2>
+                <p className={styles.welcomeSubtitle}>
                   Singapore government datasets from data.gov.sg and MOM.
                 </p>
-                <div className="mt-8 grid w-full gap-2 sm:grid-cols-2">
+                <div className={styles.suggestions}>
                   {SUGGESTIONS.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => ask(s)}
-                      className="rounded-xl border border-zinc-200 px-4 py-3 text-left text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                    >
+                    <button key={s} onClick={() => ask(s)} className={styles.suggestion}>
                       {s}
                     </button>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="mx-auto max-w-3xl space-y-10 px-4 py-8">
+              <div className={`${shared.column} ${styles.turns}`}>
                 {turns.map((t) => (
                   <ChatMessage key={t.id} turn={t} />
                 ))}
@@ -106,7 +98,7 @@ export default function Home() {
             )}
           </main>
 
-          <div className="mx-auto w-full max-w-3xl px-4 pb-4">
+          <div className={`${shared.column} ${styles.composer}`}>
             <Composer
               value={draft}
               onChange={setDraft}
@@ -116,7 +108,7 @@ export default function Home() {
               provider={provider}
               onProviderChange={setProvider}
             />
-            <p className="mt-2 text-center text-xs text-zinc-400">
+            <p className={styles.footnote}>
               Every number is computed by the database and checked against the report.
             </p>
           </div>

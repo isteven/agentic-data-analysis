@@ -1,0 +1,33 @@
+.badge {
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.blue {
+  background: var(--badge-blue-bg);
+  color: var(--badge-blue-fg);
+}
+
+.amber {
+  background: var(--badge-amber-bg);
+  color: var(--badge-amber-fg);
+}
+
+.green {
+  background: var(--badge-green-bg);
+  color: var(--badge-green-fg);
+}
+
+.red {
+  background: var(--badge-red-bg);
+  color: var(--badge-red-fg);
+}
+
+.neutral {
+  background: var(--badge-neutral-bg);
+  color: var(--badge-neutral-fg);
+}

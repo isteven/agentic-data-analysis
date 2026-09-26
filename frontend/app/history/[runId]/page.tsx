@@ -7,6 +7,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { HistorySidebar } from "@/components/HistorySidebar";
 import { fetchRun } from "@/lib/runs";
 import type { QueryResponse } from "@/lib/types";
+import shared from "@/components/shared.module.css";
+import styles from "../history.module.css";
 
 export default function HistoryDetailPage({ params }: { params: Promise<{ runId: string }> }) {
   const { runId } = use(params);
@@ -23,25 +25,23 @@ export default function HistoryDetailPage({ params }: { params: Promise<{ runId:
   }, [runId]);
 
   return (
-    <div className="flex h-screen flex-col bg-white dark:bg-zinc-950">
+    <div className={shared.shell}>
       <AppHeader />
-      <div className="flex min-h-0 flex-1">
+      <div className={shared.shellBody}>
         <HistorySidebar />
 
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-4 py-8">
-            <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
+        <div className={styles.detailScroll}>
+          <div className={`${shared.column} ${styles.detail}`}>
+            <Link href="/" className={styles.backLink}>
               ← New chat
             </Link>
 
-            {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
-            {!error && !result && <p className="mt-4 text-sm text-zinc-500">Loading…</p>}
+            {error && <p className={`${shared.error} ${styles.spaced}`}>{error}</p>}
+            {!error && !result && <p className={`${shared.muted} ${styles.spaced}`}>Loading…</p>}
 
             {result && (
               <>
-                <h1 className="mt-4 mb-6 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                  {result.query_text}
-                </h1>
+                <h1 className={`${shared.pageTitle} ${styles.detailTitle}`}>{result.query_text}</h1>
                 <ResultTabs query={result.query_text} result={result} />
               </>
             )}

@@ -1,28 +1,151 @@
-@import "tailwindcss";
-
+/* ============================================================================
+   Theme: every colour in the app. Change a value here and every component
+   using it follows. Components never hardcode colours; they use var(--...).
+   ========================================================================= */
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
+  --color-1: #4a044e;
+  --color-2: #4e042d;
+  --color-3: #25044e;
+  --color-4: #3e82aa;
+  --color-5: #7b37e2;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Text */
+  --text-body: #27272a;      /* report text, table cells, trace content */
+  --text-secondary: #3f3f46; /* outline buttons, inactive sidebar items */
+  --text-muted: #71717a;     /* labels, hints, inactive tabs */
+  --text-subtle: #a1a1aa;    /* timestamps, footnotes */
+
+  /* Surfaces and lines */
+  --surface: #f4f4f5;        /* user bubble, active sidebar item, inline code */
+  --hover-bg: #fafafa;
+  --input-bg: #ffffff;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;  /* buttons, inputs */
+  --divider: #f4f4f5;
+
+  /* Accent: active tab, send button */
+  --accent: var(--foreground);
+  --accent-contrast: var(--background);
+
+  /* Feedback */
+  --danger: #dc2626;
+  --warning-bg: #fffbeb;
+  --warning-text: #92400e;
+  --live-dot: #3b82f6;
+
+  /* Badges (run status, trace step type) */
+  --badge-blue-bg: #dbeafe;     --badge-blue-fg: #1e40af;
+  --badge-amber-bg: #fef3c7;    --badge-amber-fg: #92400e;
+  --badge-green-bg: #d1fae5;    --badge-green-fg: #065f46;
+  --badge-red-bg: #fee2e2;      --badge-red-fg: #991b1b;
+  --badge-neutral-bg: #f4f4f5;  --badge-neutral-fg: #27272a;
+
+  /* Status dots in the history sidebar */
+  --dot-green: #10b981;
+  --dot-amber: #f59e0b;
+  --dot-red: #ef4444;
+  --dot-blue: #3b82f6;
+  --dot-neutral: #a1a1aa;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #341539;
     --foreground: #ededed;
+
+    --text-body: #f1f1f1;
+    --text-secondary: #e5e5e5;
+    --text-muted: #cccccc;
+    --text-subtle: #a1a1aa;
+    --text-brave:#666666;
+
+    --header-main: #684c76;
+
+    --surface: #27272a;
+    --hover-bg: #18181b;
+    --input-bg: #18181b;
+    --border: #27272a;
+    --border-light: #999999;
+    --border-strong: #3f3f46;
+    --divider: #27272a;
+
+    --danger: #f87171;
+    --warning-bg: #451a03;
+    --warning-text: #fde68a;
+
+    --badge-blue-bg: #1e3a8a;     --badge-blue-fg: #bfdbfe;
+    --badge-amber-bg: #78350f;    --badge-amber-fg: #fde68a;
+    --badge-green-bg: #064e3b;    --badge-green-fg: #a7f3d0;
+    --badge-red-bg: #7f1d1d;      --badge-red-fg: #fecaca;
+    --badge-neutral-bg: #27272a;  --badge-neutral-fg: #e4e4e7;
   }
 }
 
+/* ============================================================================
+   Base: a minimal reset, so components start from a blank slate.
+   ========================================================================= */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
+  margin: 0;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-exo2), Arial, Helvetica, sans-serif;
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4, p, ul, ol, figure, pre {
+  margin: 0;
+}
+
+h1, h2, h3, h4 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+ul, ol {
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+svg {
+  display: block;
 }
 
 /* Scrollbars: #666666 bar on a transparent track, in both themes. */

@@ -1,0 +1,76 @@
+/* ---- /history (list page) ---- */
+.listPage {
+  min-height: 100vh;
+  padding-top: 32px;
+  padding-bottom: 32px;
+}
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.run {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.run:hover {
+  background: var(--hover-bg);
+}
+
+.runItem + .runItem {
+  border-top: 1px solid var(--divider);
+}
+
+.runText {
+  min-width: 0;
+}
+
+.runQuery {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--foreground);
+}
+
+.runMeta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---- /history/[runId] (detail page) ---- */
+.detailScroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.detail {
+  padding-top: 10px;
+  padding-bottom: 32px;
+}
+
+.backLink {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.backLink:hover {
+  color: var(--text-body);
+}
+
+.spaced {
+  margin-top: 16px;
+}
+
+.detailTitle {
+  margin: 16px 0 24px;
+}

@@ -1,11 +1,17 @@
+import Image from "next/image";
 import Link from "next/link";
+import logo from "@/app/logo.webp";
+import styles from "./AppHeader.module.css";
 
 /** Full-width app bar above both the history sidebar and the main pane. */
 export function AppHeader({ children }: { children?: React.ReactNode }) {
   return (
-    <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-      <Link href="/" className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-        Policy Data Analytics
+    <header className={styles.header}>
+      <Link href="/" className={styles.title}>
+        <Image src={logo} alt="" className={styles.logo} priority />
+        <span className={styles.titleOnly}>
+            Policy Data Analytics
+            </span>
       </Link>
       {children}
     </header>

@@ -1,0 +1,67 @@
+.form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 24px;
+  background: var(--input-bg);
+  padding: 8px 16px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+}
+
+.form:focus-within {
+  border-color: var(--text-subtle);
+}
+
+.input {
+  flex: 1;
+  max-height: 200px;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 6px 0;
+  font-size: 15px;
+  color: var(--foreground);
+}
+
+.input::placeholder {
+  color: var(--text-subtle);
+}
+
+.providerSelect {
+  margin-bottom: 4px;
+  border: 0;
+  border-radius: 8px;
+  outline: none;
+  background: transparent;
+  padding: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.providerSelect:hover {
+  background: var(--surface);
+}
+
+.send {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 2px;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.send:disabled {
+  opacity: 0.3;
+}
+
+.sendIcon {
+  width: 16px;
+  height: 16px;
+}

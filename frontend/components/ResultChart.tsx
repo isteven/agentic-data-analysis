@@ -14,9 +14,10 @@ import {
   YAxis,
 } from "recharts";
 import type { Analysis, Cell } from "@/lib/types";
+import styles from "./ResultChart.module.css";
 
 // Distinct in both light and dark themes; series beyond this wrap around.
-const SERIES_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#65a30d"];
+const SERIES_COLORS = ["#5e81ac", "#bf616a", "#a3be8c", "#ebcb8b", "#b48ead", "#88c0d0", "#ac4c78", "#cacdc7"];
 
 type Point = Record<string, Cell>;
 
@@ -72,9 +73,9 @@ export const ResultChart = forwardRef<HTMLDivElement, { analysis: Analysis }>(fu
 
   const common = (
     <>
-      <CartesianGrid strokeDasharray="3 3" stroke="#a1a1aa" strokeOpacity={0.3} />
+      <CartesianGrid strokeDasharray="3 3" stroke="#ffffff" strokeOpacity={0.3} />
       <XAxis dataKey={chart.x} tick={{ fontSize: 12 }} />
-      <YAxis tick={{ fontSize: 12 }} tickFormatter={formatNumber} width={70} />
+      <YAxis tick={{ fontSize: 12  }} tickFormatter={formatNumber} width={70} />
       <Tooltip formatter={formatNumber} />
       {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
     </>
@@ -82,7 +83,7 @@ export const ResultChart = forwardRef<HTMLDivElement, { analysis: Analysis }>(fu
 
   return (
     <figure>
-      <div ref={ref} className="h-72 w-full">
+      <div ref={ref} className={styles.chart}>
         <ResponsiveContainer width="100%" height="100%">
           {chart.type === "bar" ? (
             <BarChart data={points}>
@@ -109,7 +110,7 @@ export const ResultChart = forwardRef<HTMLDivElement, { analysis: Analysis }>(fu
         </ResponsiveContainer>
       </div>
       {analysis.interpretation && (
-        <figcaption className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+        <figcaption className={styles.caption}>
           {analysis.interpretation}
         </figcaption>
       )}

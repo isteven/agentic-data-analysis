@@ -1,0 +1,77 @@
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Empty state: heading + suggestion cards, centred. */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.welcomeTitle {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.welcomeSubtitle {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.suggestions {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 32px; 
+}
+
+@media (min-width: 640px) {
+  .suggestions {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.suggestion {
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.suggestion:hover {
+  background: var(--hover-bg);
+}
+
+.turns {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  padding-top: 32px;
+  padding-bottom: 32px;
+}
+
+.composer {
+  padding-bottom: 16px;
+}
+
+.footnote {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-subtle);
+}

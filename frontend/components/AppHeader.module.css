@@ -1,0 +1,30 @@
+.header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 12px;
+  background-color: var(--foreground);
+  color: var(--header-main);
+  height: 40px;
+}
+
+.title {
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--header-main);
+}
+
+.titleOnly {
+  display: inline-block;
+  position: relative;
+  top: -2px;
+}
+
+.logo {
+  height: 30px;
+  width: auto;
+  padding-top: 8px;
+  padding-right: 20px;
+}

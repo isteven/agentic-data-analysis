@@ -1,0 +1,47 @@
+.list {
+  max-height: 512px;
+  overflow-y: auto;
+}
+
+/* While steps are still arriving the list is shorter, inside the pending box. */
+.live {
+  max-height: 288px;
+}
+
+.step {
+  padding: 12px 0;
+  border-top: 1px solid var(--border-light);  
+}
+
+.step:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.current {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.stepHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.content {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--text-body);
+}
