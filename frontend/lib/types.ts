@@ -12,6 +12,37 @@ export interface QueryResponse {
   report_markdown: string | null;
   trace: TraceStep[];
   analysis: Analysis | null;
+  token_usage: TokenUsage | null; // null while running, or for runs before tracking
+}
+
+/** One LLM attempt, with the token counts its provider reported. */
+export interface LlmCall {
+  node_name: string;
+  tier: string;
+  provider: string;
+  model: string | null;
+  input_tokens: number; // includes cached_input_tokens
+  output_tokens: number;
+  cached_input_tokens: number;
+  latency_ms: number;
+  outcome: "ok" | "failed" | string;
+}
+
+export interface ModelUsage {
+  provider: string;
+  model: string | null;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens: number;
+}
+
+/** Totals per model only: different models' tokens aren't comparable. */
+export interface TokenUsage {
+  calls: number;
+  failed_calls: number;
+  by_model: ModelUsage[];
+  per_call: LlmCall[];
 }
 
 export interface ChartSpec {
