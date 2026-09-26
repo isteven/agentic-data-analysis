@@ -201,7 +201,8 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 | Endpoint | Status | Purpose |
 |---|---|---|
 | `POST /api/queries` | Built (synchronous) -> planned: returns `202` + `run_id` | Submit a question |
-| `GET /api/health`, `GET /api/health/providers` | Built | Liveness; which providers are configured |
+| `GET /api/health`, `GET /api/health/providers` | Built | Liveness (the API process only); which providers are configured |
+| `GET /api/health/ready` | Built | Readiness: Postgres, Redis and a live worker, 2 s timeout each, run together; 200 or 503 naming what's down |
 | `GET /api/queries/{run_id}` | Built | Poll result (fallback if the stream drops); includes `token_usage` (per-model totals + each call) once the run finishes |
 | `GET /api/agent-trace/{run_id}` | Built | Live trace via SSE |
 | `GET /api/analyses` | Built | History list (query, status, provider, timestamps); detail reuses `GET /api/queries/{run_id}` |
@@ -233,6 +234,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 ### 9.1a Observability
 
 - **Built:** structured logs as the integration point. `LOG_FORMAT=json` makes every line (API, worker, Uvicorn) one JSON object; lines logged during a run carry its `run_id` (a context variable bound by the worker). Events with fields: `http request` (middleware, `app/api/middleware.py`), `llm call` (tokens, model, latency, outcome), `agent step`, `run finished` (status, duration, calls, fallbacks). Per-run detail also lives in `agent_traces` and `llm_calls`.
+- **Built:** readiness check `GET /api/health/ready` (Postgres, Redis, a live SAQ worker from its registry); the one thing logs can't show is a component that isn't there.
 - **Not built, by choice:** a metrics/tracing stack (Prometheus + Grafana, OpenTelemetry, LangSmith, alerting). The logs feed any of them directly; LangSmith needs only environment variables. See the Innovation Assessment for the production setup.
 
 ### 9.2 Cost
