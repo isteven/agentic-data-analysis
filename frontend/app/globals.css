@@ -55,6 +55,20 @@
   --dot-red: #ef4444;
   --dot-blue: #3b82f6;
   --dot-neutral: #a1a1aa;
+
+  /* Charts (components/ResultChart.tsx) */
+  --chart-grid: #e4e4e7;
+  --chart-tick: #52525b;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-text: #27272a;
+  --chart-series-1: #5e81ac;
+  --chart-series-2: #bf616a;
+  --chart-series-3: #a3be8c;
+  --chart-series-4: #ebcb8b;
+  --chart-series-5: #b48ead;
+  --chart-series-6: #88c0d0;
+  --chart-series-7: #ac4c78;
+  --chart-series-8: #cacdc7;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -89,6 +103,11 @@
     --badge-green-bg: #064e3b;    --badge-green-fg: #a7f3d0;
     --badge-red-bg: #7f1d1d;      --badge-red-fg: #fecaca;
     --badge-neutral-bg: #27272a;  --badge-neutral-fg: #e4e4e7;
+
+    --chart-grid: rgb(255 255 255 / 0.3);
+    --chart-tick: #cccccc;
+    --chart-tooltip-bg: #27272a;
+    --chart-tooltip-text: #f1f1f1;
   }
 }
 

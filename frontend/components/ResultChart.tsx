@@ -17,8 +17,16 @@ import { CATEGORY, hasChart, toPoints } from "@/lib/chart-data";
 import type { Analysis } from "@/lib/types";
 import styles from "./ResultChart.module.css";
 
-// Distinct in both light and dark themes; series beyond this wrap around.
-const SERIES_COLORS = ["#5e81ac", "#bf616a", "#a3be8c", "#ebcb8b", "#b48ead", "#88c0d0", "#ac4c78", "#cacdc7"];
+// Theme tokens (app/globals.css), so charts follow light and dark mode; series
+// beyond the eighth wrap around.
+const SERIES_COUNT = 8;
+const seriesColor = (i: number) => `var(--chart-series-${(i % SERIES_COUNT) + 1})`;
+const TICK = { fontSize: 12, fill: "var(--chart-tick)" };
+const TOOLTIP_STYLE = {
+  background: "var(--chart-tooltip-bg)",
+  borderColor: "var(--border)",
+  color: "var(--chart-tooltip-text)",
+};
 
 const LONG_LABEL = 12; // characters; longer category labels switch bars to horizontal
 const LABEL_WIDTH = 220;
@@ -47,19 +55,19 @@ export const ResultChart = forwardRef<HTMLDivElement, { analysis: Analysis }>(fu
 
   const common = (
     <>
-      <CartesianGrid strokeDasharray="3 3" stroke="#ffffff" strokeOpacity={0.3} />
+      <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
       {horizontal ? (
         <>
-          <XAxis type="number" tick={{ fontSize: 12 }} tickFormatter={formatNumber} />
-          <YAxis type="category" dataKey={xKey} tick={{ fontSize: 11 }} width={LABEL_WIDTH} interval={0} />
+          <XAxis type="number" tick={TICK} tickFormatter={formatNumber} />
+          <YAxis type="category" dataKey={xKey} tick={{ ...TICK, fontSize: 11 }} width={LABEL_WIDTH} interval={0} />
         </>
       ) : (
         <>
-          <XAxis dataKey={xKey} tick={{ fontSize: 12 }} />
-          <YAxis tick={{ fontSize: 12  }} tickFormatter={formatNumber} width={70} />
+          <XAxis dataKey={xKey} tick={TICK} />
+          <YAxis tick={TICK} tickFormatter={formatNumber} width={70} />
         </>
       )}
-      <Tooltip formatter={formatNumber} />
+      <Tooltip formatter={formatNumber} contentStyle={TOOLTIP_STYLE} labelStyle={{ color: "var(--chart-tooltip-text)" }} />
       {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
     </>
   );
@@ -76,7 +84,7 @@ export const ResultChart = forwardRef<HTMLDivElement, { analysis: Analysis }>(fu
             <BarChart data={points} layout={horizontal ? "vertical" : "horizontal"}>
               {common}
               {series.map((s, i) => (
-                <Bar key={s} dataKey={s} fill={SERIES_COLORS[i % SERIES_COLORS.length]} />
+                <Bar key={s} dataKey={s} fill={seriesColor(i)} />
               ))}
             </BarChart>
           ) : (
@@ -87,7 +95,7 @@ export const ResultChart = forwardRef<HTMLDivElement, { analysis: Analysis }>(fu
                   key={s}
                   type="monotone"
                   dataKey={s}
-                  stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
+                  stroke={seriesColor(i)}
                   strokeWidth={2}
                   dot={{ r: 3 }}
                 />
