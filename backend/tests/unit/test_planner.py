@@ -248,3 +248,11 @@ async def test_the_time_range_is_not_enforced_on_views_without_a_time_column():
     )
 
     assert result.status == "answered"
+
+
+def test_describe_states_what_one_row_is():
+    # Level mistakes ("which university" answered from one degree row) come from not
+    # knowing a view's row level; it's stated from the profile, never hardcoded.
+    text = describe("retrenchment", CATALOG)
+
+    assert "Each row: one year x industry." in text  # hierarchy parents aren't part of it
