@@ -16,7 +16,19 @@ services:
     # Webpack, not Turbopack: host file events don't reach the container, and
     # Turbopack's poll watcher (Next 16.3) never picked up edits in testing,
     # while webpack's WATCHPACK_POLLING does.
-    command: ["npx", "next", "dev", "--webpack"]
+    #
+    # The sed patches webpack's CSS hot reload (dev only): on quick successive
+    # CSS edits it removes a <link> React has already removed and throws
+    # "Cannot read properties of null (reading 'removeChild')". Element.remove()
+    # is a no-op on a detached node. Patched at start, not in the image, because
+    # node_modules lives in a named volume the image doesn't refresh.
+    command:
+      - sh
+      - -c
+      - >-
+        sed -i 's/e\.parentNode\.removeChild(e)/e.remove()/g'
+        node_modules/next/dist/compiled/mini-css-extract-plugin/hmr/hotModuleReplacement.js
+        && exec npx next dev --webpack
     environment:
       WATCHPACK_POLLING: "true"
 
