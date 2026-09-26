@@ -16,12 +16,17 @@
   --text-secondary: #3f3f46; /* outline buttons, inactive sidebar items */
   --text-muted: #71717a;     /* labels, hints, inactive tabs */
   --text-subtle: #a1a1aa;    /* timestamps, footnotes */
+  --text-brave: #666666;
+
+  /* Header bar: its background is --foreground, so this must contrast with it */
+  --header-main: #d8b4fe;
 
   /* Surfaces and lines */
   --surface: #f4f4f5;        /* user bubble, active sidebar item, inline code */
   --hover-bg: #fafafa;
   --input-bg: #ffffff;
   --border: #e4e4e7;
+  --border-light: #d4d4d8;   /* suggestion cards, tab bar, trace dividers */
   --border-strong: #d4d4d8;  /* buttons, inputs */
   --divider: #f4f4f5;
 
