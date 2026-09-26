@@ -26,8 +26,20 @@ export async function submitQuery(query: string, provider?: string): Promise<Que
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, provider: provider || undefined }),
   });
-  if (!res.ok) throw new Error(`Submitting the question failed (HTTP ${res.status})`);
+  if (!res.ok) throw new Error((await errorDetail(res)) ?? `Submitting the question failed (HTTP ${res.status})`);
   return res.json();
+}
+
+/** The API's own message for a refused request ("Too many questions...", "queue
+ *  unavailable..."), which says what to do; null when there isn't one. */
+async function errorDetail(res: Response): Promise<string | null> {
+  try {
+    const body: unknown = await res.json();
+    const detail = (body as { detail?: unknown })?.detail;
+    return typeof detail === "string" ? detail : null;
+  } catch {
+    return null;
+  }
 }
 
 /** GET /api/analyses: past runs, most recent first. */

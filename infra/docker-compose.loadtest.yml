@@ -9,6 +9,8 @@ x-loadtest-env: &loadtest-env
   LLM_DEFAULT_PROVIDER: mock
   LLM_FALLBACK_PROVIDER: mock
   LLM_MOCK_LATENCY_MS: ${LLM_MOCK_LATENCY_MS:-1000}
+  # Every simulated user comes from one IP; the per-client limit would cap the test.
+  RATE_LIMIT_QUERIES_PER_MINUTE: ${RATE_LIMIT_QUERIES_PER_MINUTE:-0}
 
 services:
   backend:

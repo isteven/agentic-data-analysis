@@ -239,8 +239,8 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 ### 9.3 Security and privacy
 
-- **Built:** request validation (Pydantic); CORS restricted to the frontend origin; secrets only in per-service `.env` files (never committed); `pydantic-settings` validates config at startup.
-- **Planned:** rate limiting on `POST /api/queries`; CI dependency scanning; prompt-injection mitigation for text coming from data files (the planned fixed plan vocabulary limits what injected text could do).
+- **Built:** request validation (Pydantic: question 1-2,000 characters; only `openai` / `bedrock` can be chosen, never `mock` or unbuilt stubs); **rate limiting** on `POST /api/queries` (`RATE_LIMIT_QUERIES_PER_MINUTE` per client IP, default 10, Redis fixed window, 429 with `Retry-After`; fails open if Redis is down; `app/api/rate_limit.py`); CORS restricted to the frontend origin; secrets only in per-service `.env` files (never committed); `pydantic-settings` validates config at startup.
+- **Planned:** CI dependency scanning; prompt-injection mitigation for text coming from data files (the planned fixed plan vocabulary limits what injected text could do).
 - **Privacy:** all datasets are public, aggregate statistics; no personal data flows through the system.
 
 ## 10. Deployment
