@@ -85,6 +85,8 @@ export function ResultTabs({ query, result }: { query: string; result: QueryResp
             </button>
           ))}
         </div>
+      </div>
+      <div role="tabpanel" className={styles.tabPanel}>
         {active === "report" && withChart && (
           <div className={styles.exportActions}>
             {(["png", "pdf"] as const).map((format) => (
@@ -100,15 +102,15 @@ export function ResultTabs({ query, result }: { query: string; result: QueryResp
           </div>
         )}
         {active === "data" && result.analysis && (
-          <button
-            onClick={() => exportTableAsCsv(result.analysis!, `${baseName}-data.csv`)}
-            className={styles.exportButton}
-          >
-            Export CSV
-          </button>
+          <div className={styles.exportActions}>
+            <button
+              onClick={() => exportTableAsCsv(result.analysis!, `${baseName}-data.csv`)}
+              className={styles.exportButton}
+            >
+              Export CSV
+            </button>
+          </div>
         )}
-      </div>
-      <div role="tabpanel" className={styles.tabPanel}>
         {active === "report" && (
           <div className={styles.report}>
             {withChart && result.analysis && <ResultChart ref={chartRef} analysis={result.analysis} />}
