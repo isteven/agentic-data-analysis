@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage
 from app.agents import llm
 from app.agents.nodes import analytics, coordinator, intent, report_writer, reviewer
 from app.agents.nodes.coordinator import CoordinatorPlan, PlanStepOutput
-from app.agents.nodes.intent import Intent
+from app.agents.nodes.intent import Intent, TimeRange
 from app.agents.nodes.reviewer import Review
 from app.agents.state import new_state
 from app.db.session import AsyncSessionLocal
@@ -297,3 +297,38 @@ def llm_call(provider, model, inp, out, cached=0, outcome="ok", node="analytics"
         "latency_ms": 42,
         "outcome": outcome,
     }
+
+
+async def test_a_time_range_question_is_answered_per_period_and_charted_as_a_line(seeded_db, llms):
+    llms["intent"] = [
+        (
+            "fake",
+            Scripted(
+                Intent(
+                    rewritten="How did resident retrenchments change from 2018 to 2020?",
+                    answerable=True,
+                    time_range=TimeRange(start=2018, end=2020),
+                )
+            ),
+        )
+    ]
+    llms["coordinator"] = [("fake", Scripted(plan("retrenchment_by_residential_status")))]
+    collapsed = (
+        "SELECT MAX(retrench_resident) - MIN(retrench_resident) AS change"
+        " FROM data.retrenchment_by_residential_status"
+        " WHERE year BETWEEN 2018 AND 2020"
+    )
+    per_year = (
+        "SELECT year, retrench_resident FROM data.retrenchment_by_residential_status"
+        " WHERE year BETWEEN 2018 AND 2020 ORDER BY year"
+    )
+    llms["analytics"] = [("fake", Scripted(submit(collapsed), submit(per_year)))]
+    llms["report_writer"] = [("fake", Scripted(report("Resident retrenchments rose to 14,380 in 2020.")))]
+    llms["reviewer"] = [("fake", Scripted(Review(verdict="pass", reason="ok")))]
+
+    state = await run("resident retrenchments 2018 to 2020?")
+
+    assert state["time_range"] == {"start": 2018, "end": 2020}
+    assert any(t.startswith("Sent back: the question covers 2018-2020") for t in trace_text(state, "analytics"))
+    assert [row[0] for row in state["analysis"]["rows"]] == [2018, 2019, 2020]
+    assert (state["analysis"]["chart"]["type"], state["analysis"]["chart"]["x"]) == ("line", "year")

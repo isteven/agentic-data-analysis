@@ -50,6 +50,8 @@ export interface ChartSpec {
   x: string | null;
   y: string[];
   group: string | null;
+  limit: number | null; // draw only the first N rows (too many categories); null = all
+  sort: "asc" | "desc" | null; // by the first y column before cutting to limit; null = query order
   source: "planner" | "fallback" | string | null;
 }
 

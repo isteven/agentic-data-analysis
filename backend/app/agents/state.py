@@ -59,6 +59,8 @@ class AgentState(TypedDict):
     query: str  # the user's words, as asked
     # The intent step's precise rewrite (nodes/intent.py); None = not rewritten.
     intent_query: str | None
+    # {"start", "end"} years when the question spans periods (intent step); None otherwise.
+    time_range: dict | None
     run_id: str
     provider: str | None  # requested provider; None = LLM_DEFAULT_PROVIDER
     fallbacks: list[str]  # "openai->bedrock" for each call that switched provider
@@ -82,6 +84,7 @@ def new_state(query: str, run_id: str, provider: str | None = None) -> AgentStat
     return AgentState(
         query=query,
         intent_query=None,
+        time_range=None,
         run_id=run_id,
         provider=provider,
         fallbacks=[],

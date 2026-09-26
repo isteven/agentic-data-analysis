@@ -18,6 +18,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -62,13 +63,24 @@ class run_sql(BaseModel):
 
 
 class ChartSuggestion(BaseModel):
-    """How to show the final result; columns must be columns of the result."""
+    """Which result columns to chart. The chart type is picked by code from the
+    result's shape (app/agents/chart.py), so the same kind of question always gets the
+    same chart."""
 
-    type: str = Field(description="'line' (trend over time), 'bar' (compare categories) or 'none'")
-    x: str | None = Field(default=None, description="Result column for the x axis")
+    x: str | None = Field(
+        default=None, description="Result column for the x axis: the time column for anything over time, else the category"
+    )
     y: list[str] = Field(default_factory=list, description="Numeric result column(s) to plot")
     group: str | None = Field(
         default=None, description="Optional result column splitting rows into one series each"
+    )
+    best: Literal["lowest", "highest"] | None = Field(
+        default=None,
+        description=(
+            "For a long list: which end the question is about - 'lowest' (shortest, cheapest, "
+            "fewest) or 'highest' (top, most, longest). Only the first rows of a long list "
+            "are charted, sorted this way."
+        ),
     )
 
 
@@ -113,10 +125,19 @@ Rules:
   the time column and summed measures, no dimensions, so it can't be filtered by category.
 - Never type a number from an earlier result into a query; the database computes every number.
 - If a query is rejected, read the message and fix the query.
-- In submit_answer, suggest a chart: 'line' for trends over time, 'bar' to compare
-  categories, 'none' when a table reads better (e.g. a short ranked list). Chart one
-  kind of measure at a time (counts or rates, not both), and include every series the
-  question compares."""
+- Every answer is charted, so the final result must include the number(s) the answer rests
+  on (e.g. the rate a ranking is based on), not only names.
+- When the answer ranks or lists many items ("shortest", "highest", "top"), ORDER BY the
+  measure it ranks by, best first, and set the chart's `best` to that end of the list.
+- In submit_answer, say which result columns to chart (x, y, optional group); the chart
+  type is chosen automatically. Chart one kind of measure at a time (counts or rates, not
+  both), and include every series the question compares."""
+
+# Sent with the question when the intent step found a span of periods.
+TIME_RANGE_NOTE = (
+    "The question covers {start}-{end}. Return one row per period in that range, with the "
+    "time column, so the change can be seen and charted - not only the endpoints' difference."
+)
 
 
 @dataclass
@@ -184,16 +205,28 @@ async def run_planner(
     run_sql_fn: RunSql,
     trace: Trace,
     max_steps: int = MAX_STEPS,
+    time_range: dict | None = None,
 ) -> PlannerResult:
-    """Answer `question` using only `views` (a subset of `catalog`)."""
+    """Answer `question` using only `views` (a subset of `catalog`).
+
+    `time_range` ({"start", "end"} from the intent step): the question spans periods, so
+    the answer should be one row per period. Enforced only on views that have a time
+    column, and only once - an answer in the wrong shape still beats no answer.
+    """
     visible = {v: catalog[v] for v in views if v in catalog}
     bound = model.bind_tools(TOOLS)
     overview = "\n\n".join(describe(v, visible) for v in visible)
+    time_columns = sorted({c["column"] for cols in visible.values() for c in cols if c["role"] == "time"})
+    wants_periods = bool(time_range and time_columns)
+    prompt = f"Question: {question}\n\nViews selected for this question:\n{overview}"
+    if wants_periods:
+        prompt += "\n\n" + TIME_RANGE_NOTE.format(**time_range)
     messages = [
         SystemMessage(SYSTEM_PROMPT.format(views=", ".join(visible) or "(none)")),
-        HumanMessage(f"Question: {question}\n\nViews selected for this question:\n{overview}"),
+        HumanMessage(prompt),
     ]
     outcome = PlannerResult(status="gave_up")
+    sent_back_for_periods = False
 
     async def act(name: str, args: dict) -> str:
         if name == "describe_view":
@@ -247,6 +280,19 @@ async def run_planner(
                     outcome.queries_rejected += 1
                     trace("observation", f"Final query rejected: {exc}")
                     messages.append(ToolMessage(f"Rejected: {exc}", tool_call_id=call["id"]))
+                    continue
+                if (
+                    wants_periods
+                    and not sent_back_for_periods
+                    and not any(c in result.columns for c in time_columns)
+                ):
+                    sent_back_for_periods = True
+                    note = (
+                        f"Sent back: the question covers {time_range['start']}-{time_range['end']}; "
+                        f"return one row per period with the {' or '.join(time_columns)} column."
+                    )
+                    trace("observation", note)
+                    messages.append(ToolMessage(note, tool_call_id=call["id"]))
                     continue
                 trace("observation", f"Final result: {len(result.rows)} row(s)")
                 outcome.status = "answered"

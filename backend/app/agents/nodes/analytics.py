@@ -123,6 +123,7 @@ async def analytics_node(
         model=node_model(state, NODE_NAME, "quality"),
         run_sql_fn=partial(run_checked_sql, engine, catalog=catalog),
         trace=lambda kind, content: emit_trace(state, NODE_NAME, kind, content),
+        time_range=state.get("time_range"),
     )
     result = outcome.result
     state["analysis"] = {

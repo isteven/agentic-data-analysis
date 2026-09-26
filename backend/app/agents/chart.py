@@ -1,9 +1,12 @@
-"""Chart spec for a query result: the planner suggests, code checks, the frontend draws.
+"""Chart spec for a query result: the planner suggests columns, code picks the type,
+the frontend draws.
 
-The model only chooses how to show the result (type and which columns go where); every
-plotted value comes from the database result itself. A suggestion naming a column that
-isn't in the result, or plotting a non-numeric column, is replaced by a fallback picked
-from the result's shape, so a bad suggestion never breaks the report.
+The type follows from the result's shape, never from the model, so the same kind of
+question always gets the same chart: a time axis with 3+ periods is a line; two
+periods, categories or a single value are bars. Every result with a number gets a
+chart. The model only chooses which columns go where; a suggestion naming a column
+that isn't usable is replaced by columns picked from the result's shape. Every
+plotted value comes from the database result itself.
 """
 
 import logging
@@ -12,9 +15,10 @@ from app.data.sql_runner import QueryResult
 
 logger = logging.getLogger(__name__)
 
-CHART_TYPES = ("line", "bar", "none")
-MAX_BAR_CATEGORIES = 30  # beyond this a bar chart is unreadable; show the table
+MAX_BAR_CATEGORIES = 30  # beyond this a bar chart is unreadable...
+TOP_CATEGORIES = 15  # ...so it shows this many rows, in the query's order
 MAX_SERIES = 8
+MIN_LINE_PERIODS = 3  # two points make a comparison (bars), not a trend
 SCALE_RATIO = 20  # series sharing one axis must be within this factor of each other
 
 
@@ -47,69 +51,77 @@ def _same_scale(result: QueryResult, y: list[str]) -> list[str]:
     return [c for c in y if base / SCALE_RATIO <= (peak(c) or base) <= base * SCALE_RATIO]
 
 
-def _fallback(result: QueryResult, time_columns: set[str]) -> dict:
-    numeric = _numeric_columns(result)
-    labels = [c for c in result.columns if c not in numeric or c in time_columns]
-    values = [c for c in numeric if c not in time_columns]
-    if not values or len(result.rows) < 2:
-        return {"type": "none"}
-    time = next((c for c in result.columns if c in time_columns), None)
+def _columns_from_shape(
+    result: QueryResult, labels: list[str], values: list[str], time_columns: set[str]
+) -> tuple[str | None, list[str], str | None]:
+    """x, y and group picked from the result alone."""
+    time = next((c for c in labels if c in time_columns), None)
     others = [c for c in labels if c != time]
-    if time and len(others) <= 1:
-        group = others[0] if others and _distinct(result, others[0]) <= MAX_SERIES else None
-        if others and group is None:
-            return {"type": "none"}
-        return {
-            "type": "line",
-            "x": time,
-            "y": values[:MAX_SERIES] if not group else values[:1],
-            "group": group,
-        }
-    if len(labels) == 1 and _distinct(result, labels[0]) <= MAX_BAR_CATEGORIES:
-        return {"type": "bar", "x": labels[0], "y": values[:MAX_SERIES], "group": None}
-    return {"type": "none"}
+    if time and not others:
+        return time, values[:MAX_SERIES], None
+    if time and len(others) == 1 and _distinct(result, others[0]) <= MAX_SERIES:
+        return time, values[:1], others[0]
+    if others:
+        # Several labels (e.g. university, degree): the most specific one tells rows apart.
+        x = max(others, key=lambda c: _distinct(result, c))
+        return x, values[:MAX_SERIES], None
+    return time, values[:MAX_SERIES], None  # a bare number: x is None
 
 
-def _problem(suggestion: dict, result: QueryResult) -> str | None:
-    """Why a suggestion can't be drawn from this result, or None if it can."""
-    if suggestion.get("type") not in CHART_TYPES:
-        return f"unknown type {suggestion.get('type')!r}"
-    if suggestion["type"] == "none":
-        return None
-    numeric = set(_numeric_columns(result))
+def _problem(suggestion: dict, labels: list[str], values: list[str], result: QueryResult) -> str | None:
+    """Why the suggested columns can't be charted, or None if they can."""
     x, y, group = suggestion.get("x"), suggestion.get("y") or [], suggestion.get("group")
-    if x not in result.columns:
-        return f"x column {x!r} not in the result"
-    if not y or any(c not in numeric for c in y):
+    if x not in labels:
+        return f"x column {x!r} is not a label column of the result"
+    if not y or any(c not in values for c in y):
         return f"y columns {y!r} must be numeric result columns"
-    if group and group not in result.columns:
-        return f"group column {group!r} not in the result"
+    if group and (group not in labels or group == x):
+        return f"group column {group!r} is not another label column of the result"
     if group and (len(y) != 1 or _distinct(result, group) > MAX_SERIES):
-        return "a grouped chart needs one y column and at most 8 groups"
-    if suggestion["type"] == "bar" and _distinct(result, x) > MAX_BAR_CATEGORIES:
-        return "too many categories for a bar chart"
+        return f"a grouped chart needs one y column and at most {MAX_SERIES} groups"
     return None
 
 
 def build_chart_spec(
     suggestion: dict | None, result: QueryResult, catalog: dict[str, list[dict]], views: list[str]
 ) -> dict:
-    """{"type": "line"|"bar"|"none", "x", "y": [...], "group", "source": "planner"|"fallback"}"""
+    """{"type": "line"|"bar"|"none", "x", "y": [...], "group", "limit", "sort", "source"}
+
+    `limit`: draw only the first N rows (too many categories); None = all rows.
+    `sort`: "asc" | "desc" by the first y column before cutting to `limit`, so the chart
+    shows the end of the list the question is about (the planner's `best`) whatever
+    order the SQL returned; None = query order.
+    """
     time_columns = {c["column"] for v in views for c in catalog.get(v, []) if c["role"] == "time"}
-    if suggestion:
-        problem = _problem(suggestion, result)
-        if problem is None:
-            spec = {
-                "type": suggestion["type"],
-                "x": suggestion.get("x"),
-                "y": _same_scale(result, list(suggestion.get("y") or [])),
-                "group": suggestion.get("group"),
-            }
-            return {**spec, "source": "planner"}
-        logger.info(
-            "[DEBUG] build_chart_spec: planner suggestion rejected (%s): %s", problem, suggestion
-        )
-    spec = _fallback(result, time_columns)
-    if spec.get("y"):
-        spec["y"] = _same_scale(result, spec["y"])
-    return {**spec, "source": "fallback"}
+    numeric = _numeric_columns(result)
+    values = [c for c in numeric if c not in time_columns]
+    labels = [c for c in result.columns if c not in values]
+    if not values or not result.rows:
+        return {
+            "type": "none", "x": None, "y": [], "group": None, "limit": None, "sort": None, "source": "fallback"
+        }
+
+    problem = _problem(suggestion, labels, values, result) if suggestion else "no suggestion"
+    if problem is None:
+        x, y, group = suggestion["x"], list(suggestion["y"]), suggestion.get("group")
+        source = "planner"
+    else:
+        if suggestion:
+            logger.info("[DEBUG] build_chart_spec: suggestion not usable (%s): %s", problem, suggestion)
+        x, y, group = _columns_from_shape(result, labels, values, time_columns)
+        source = "fallback"
+
+    over_time = x in time_columns
+    chart_type = "line" if over_time and _distinct(result, x) >= MIN_LINE_PERIODS else "bar"
+    too_many = x is not None and not over_time and _distinct(result, x) > MAX_BAR_CATEGORIES
+    best = (suggestion or {}).get("best")
+    sort = {"lowest": "asc", "highest": "desc"}.get(best) if too_many else None
+    return {
+        "type": chart_type,
+        "x": x,
+        "y": _same_scale(result, y),
+        "group": group,
+        "limit": TOP_CATEGORIES if too_many else None,
+        "sort": sort,
+        "source": source,
+    }
