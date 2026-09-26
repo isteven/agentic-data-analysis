@@ -167,3 +167,84 @@ def test_description_marks_what_can_be_summed_and_hierarchy_levels():
     assert "incidence (measure, not summable)" in text
     assert "industry_level_1 (dimension) hierarchy level of industry; 1 = top." in text
     assert '"wholesale trade"' in text
+
+
+# --- Time range: a question over a span of periods must be answered per period ---
+
+COLLAPSED = "SELECT SUM(retrench) AS change FROM data.retrenchment"
+PER_YEAR = "SELECT year, SUM(retrench) AS total FROM data.retrenchment GROUP BY year"
+RESULTS = {
+    COLLAPSED: QueryResult(sql=COLLAPSED, columns=["change"], rows=[[-1090]], truncated=False),
+    PER_YEAR: QueryResult(
+        sql=PER_YEAR, columns=["year", "total"], rows=[[2015, 15580], [2025, 14490]], truncated=False
+    ),
+}
+
+
+class ResultsRunner:
+    async def __call__(self, sql):
+        return RESULTS[sql]
+
+
+def _submit(sql):
+    return _say(_call("submit_answer", sql=sql, interpretation="Retrenchments 2015-2025"))
+
+
+async def test_a_time_range_answer_collapsed_to_one_value_is_sent_back_once():
+    result, trace, _ = await _run(
+        [_submit(COLLAPSED), _submit(PER_YEAR)],
+        runner=ResultsRunner(),
+        time_range={"start": 2015, "end": 2025},
+    )
+
+    assert result.status == "answered"
+    assert result.result.columns == ["year", "total"]
+    sent_back = [text for kind, text in trace if kind == "observation" and "one row per" in text]
+    assert len(sent_back) == 1 and "2015" in sent_back[0] and "year" in sent_back[0]
+
+
+async def test_the_time_range_is_sent_back_only_once_then_accepted():
+    result, _, _ = await _run(
+        [_submit(COLLAPSED), _submit(COLLAPSED)],
+        runner=ResultsRunner(),
+        time_range={"start": 2015, "end": 2025},
+    )
+
+    assert result.status == "answered"
+    assert result.result.columns == ["change"]  # an answer beats no answer
+
+
+async def test_the_planner_is_told_the_time_range_up_front():
+    _, _, model = await _run([_submit(PER_YEAR)], runner=ResultsRunner(), time_range={"start": 2015, "end": 2025})
+
+    first_prompt = model.seen[0][1].content
+    assert "2015" in first_prompt and "2025" in first_prompt
+
+
+async def test_without_a_time_range_a_single_value_is_fine():
+    result, trace, _ = await _run([_submit(COLLAPSED)], runner=ResultsRunner())
+
+    assert result.result.columns == ["change"]
+    assert not any("one row per" in text for _, text in trace)
+
+
+async def test_the_time_range_is_not_enforced_on_views_without_a_time_column():
+    catalog = {"stations": [{"column": "station", "role": "dimension"}, {"column": "minutes", "role": "measure"}]}
+    sql = "SELECT MIN(minutes) AS m FROM data.stations"
+    runner_result = QueryResult(sql=sql, columns=["m"], rows=[[1.35]], truncated=False)
+
+    class Runner:
+        async def __call__(self, q):
+            return runner_result
+
+    result = await run_planner(
+        "shortest travel time since 2015?",
+        ["stations"],
+        catalog,
+        ScriptedModel([_say(_call("submit_answer", sql=sql, interpretation="x"))]),
+        Runner(),
+        lambda kind, text: None,
+        time_range={"start": 2015, "end": 2025},
+    )
+
+    assert result.status == "answered"

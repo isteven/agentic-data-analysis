@@ -19,6 +19,11 @@ from app.data.views import load_view_catalog, view_name_for
 NODE_NAME = "intent"
 
 
+class TimeRange(BaseModel):
+    start: int = Field(description="First period (year) the question covers")
+    end: int = Field(description="Last period (year) the question covers")
+
+
 class Intent(BaseModel):
     rewritten: str = Field(
         description=(
@@ -31,6 +36,17 @@ class Intent(BaseModel):
         description="False only when no listed dataset could plausibly help answer it."
     )
     reason: str | None = Field(default=None, description="If not answerable: why, in one sentence.")
+    # Read from the question's meaning, not from keywords: "since 2015", "between 2020 and
+    # 2023", "over the past 3 years" and "2023 vs 2025" all span periods. The planner
+    # then returns one row per period, so the answer can be charted over time.
+    time_range: TimeRange | None = Field(
+        default=None,
+        description=(
+            "Set when the question looks at a change, trend or comparison across a span of "
+            "periods: the first and last year it covers (open-ended spans end at the latest "
+            "year listed). None when it asks about a single period or no time at all."
+        ),
+    )
 
 
 def _catalog(manifest: list[dict], views: dict[str, list[dict]]) -> str:
@@ -104,6 +120,14 @@ async def intent_node(state: AgentState, session: AsyncSession) -> AgentState:
 
     state["intent_query"] = intent.rewritten
     emit_trace(state, NODE_NAME, "action", f"Interpreted as: {intent.rewritten}")
+    if intent.time_range:
+        state["time_range"] = intent.time_range.model_dump()
+        emit_trace(
+            state,
+            NODE_NAME,
+            "observation",
+            f"Covers {intent.time_range.start}-{intent.time_range.end}: answer per period.",
+        )
     return state
 
 
