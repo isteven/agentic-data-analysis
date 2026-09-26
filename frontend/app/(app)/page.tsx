@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { Composer } from "@/components/Composer";
-import { AppHeader } from "@/components/AppHeader";
-import { HistorySidebar } from "@/components/HistorySidebar";
+import { useShell } from "@/components/AppShell";
 import { API_URL, submitQuery, watchRun } from "@/lib/runs";
 import type { ChatTurn, ProvidersInfo } from "@/lib/types";
 import shared from "@/components/shared.module.css";
@@ -22,9 +21,9 @@ export default function Home() {
   const [draft, setDraft] = useState("");
   const [providers, setProviders] = useState<ProvidersInfo | null>(null);
   const [provider, setProvider] = useState<string>("");
-  // Bumped when a question is submitted and when it finishes, so the sidebar re-fetches:
-  // a running question shows in History at once, and again when it's done.
-  const [historyVersion, setHistoryVersion] = useState(0);
+  // History re-fetches when a question is submitted and when it finishes: a running
+  // question shows at once, and again when it's done.
+  const { refreshHistory } = useShell();
   // The run being watched; New Chat or leaving the page stops watching it.
   const watching = useRef<AbortController | null>(null);
   // One question per chat: each run is answered on its own (no follow-up context yet),
@@ -48,14 +47,6 @@ export default function Home() {
 
   useEffect(() => () => watching.current?.abort(), []);
 
-  function newChat() {
-    // The run carries on on the server and appears in History when it's done; this
-    // only stops watching it.
-    watching.current?.abort();
-    watching.current = null;
-    setTurns([]);
-  }
-
   async function ask(query: string) {
     const id = crypto.randomUUID();
     setDraft("");
@@ -67,7 +58,7 @@ export default function Home() {
 
     try {
       const { run_id } = await submitQuery(query, provider);
-      setHistoryVersion((v) => v + 1);
+      refreshHistory();
       const result = await watchRun(run_id, (step) => patch((t) => ({ liveSteps: [...t.liveSteps, step] })), {
         signal: controller.signal,
       });
@@ -78,59 +69,51 @@ export default function Home() {
       patch(() => ({ pending: false, error: err instanceof Error ? err.message : "Something went wrong" }));
     } finally {
       if (watching.current === controller) watching.current = null;
-      setHistoryVersion((v) => v + 1);
+      refreshHistory();
     }
   }
 
   return (
-    <div className={shared.shell}>
-      <AppHeader onNewChat={newChat} />
-
-      <div className={shared.shellBody}>
-        <HistorySidebar refreshKey={historyVersion} />
-
-        <div className={styles.main}>
-          <main className={styles.scroll}>
-            {turns.length === 0 ? (
-              <div className={`${shared.column} ${styles.welcome}`}>
-                <h2 className={styles.welcomeTitle}>What would you like to analyse?</h2>
-                <p className={styles.welcomeSubtitle}>
-                  Singapore government datasets from data.gov.sg and MOM.
-                </p>
-                <div className={styles.suggestions}>
-                  {SUGGESTIONS.map((s) => (
-                    <button key={s} onClick={() => ask(s)} className={styles.suggestion}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className={`${shared.column} ${styles.turns}`}>
-                {turns.map((t) => (
-                  <ChatMessage key={t.id} turn={t} />
-                ))}
-              </div>
-            )}
-          </main>
-
-          <div className={`${shared.column} ${styles.composer}`}>
-            {!asked && (
-              <Composer
-                value={draft}
-                onChange={setDraft}
-                onSubmit={() => ask(draft.trim())}
-                disabled={asked}
-                providers={providers}
-                provider={provider}
-                onProviderChange={setProvider}
-              />
-            )}
-            <p className={styles.footnote}>
-              AI can make mistakes. Please double-check responses.
+    <div className={styles.main}>
+      <main className={styles.scroll}>
+        {turns.length === 0 ? (
+          <div className={`${shared.column} ${styles.welcome}`}>
+            <h2 className={styles.welcomeTitle}>What would you like to analyse?</h2>
+            <p className={styles.welcomeSubtitle}>
+              Singapore government datasets from data.gov.sg and MOM.
             </p>
+            <div className={styles.suggestions}>
+              {SUGGESTIONS.map((s) => (
+                <button key={s} onClick={() => ask(s)} className={styles.suggestion}>
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className={`${shared.column} ${styles.turns}`}>
+            {turns.map((t) => (
+              <ChatMessage key={t.id} turn={t} />
+            ))}
+          </div>
+        )}
+      </main>
+
+      <div className={`${shared.column} ${styles.composer}`}>
+        {!asked && (
+          <Composer
+            value={draft}
+            onChange={setDraft}
+            onSubmit={() => ask(draft.trim())}
+            disabled={asked}
+            providers={providers}
+            provider={provider}
+            onProviderChange={setProvider}
+          />
+        )}
+        <p className={styles.footnote}>
+          AI can make mistakes. Please double-check responses.
+        </p>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Home from "@/app/page";
+import Home from "@/app/(app)/page";
+import { AppShell } from "@/components/AppShell";
 
 // The watched run never finishes on its own: the test decides what happens to it.
 const watch = vi.hoisted(() => ({ signal: undefined as AbortSignal | undefined }));
@@ -14,7 +15,7 @@ vi.mock("@/lib/runs", () => ({
     return new Promise(() => {});
   }),
 }));
-vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/", useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("next/image", () => ({ default: () => null }));
 
 beforeEach(() => {
@@ -31,7 +32,7 @@ async function ask(question: string) {
 
 describe("Home: New Chat during a run", () => {
   it("is clickable while a question is running, and starts over", async () => {
-    render(<Home />);
+    render(<AppShell><Home /></AppShell>);
     await ask("How many residents were retrenched in 2020?");
 
     expect(screen.getByText("How many residents were retrenched in 2020?")).toBeInTheDocument();
@@ -47,7 +48,7 @@ describe("Home: New Chat during a run", () => {
   });
 
   it("stops watching the run when the page goes away", async () => {
-    const { unmount } = render(<Home />);
+    const { unmount } = render(<AppShell><Home /></AppShell>);
     await ask("How many residents were retrenched in 2020?");
 
     unmount();

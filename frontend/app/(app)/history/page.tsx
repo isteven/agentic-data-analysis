@@ -32,28 +32,29 @@ export default function HistoryPage() {
   }, []);
 
   return (
-    <div className={`${shared.column} ${styles.listPage}`}>     
+    <div className={styles.detailScroll}>
+      <div className={`${shared.column} ${styles.listPage}`}>
+        {error && <p className={shared.error}>{error}</p>}
+        {!error && runs === null && <p className={shared.muted}>Loading…</p>}
+        {runs?.length === 0 && <p className={shared.muted}>No questions asked yet.</p>}
 
-      {error && <p className={shared.error}>{error}</p>}
-      {!error && runs === null && <p className={shared.muted}>Loading…</p>}
-      {runs?.length === 0 && <p className={shared.muted}>No questions asked yet.</p>}
-
-      <ul>
-        {runs?.map((run) => (
-          <li key={run.run_id} className={styles.runItem}>
-            <Link href={`/history/${run.run_id}`} className={styles.run}>
-              <div className={styles.runText}>
-                <p className={styles.runQuery}>{run.query_text}</p>
-                <p className={styles.runMeta}>
-                  {formatDate(run.created_at)}
-                  {run.provider_used ? ` · ${run.provider_used}` : ""}
-                </p>
-              </div>
-              <Badge>{run.status}</Badge>
-            </Link>
-          </li>
-        ))}
-      </ul>
+        <ul>
+          {runs?.map((run) => (
+            <li key={run.run_id} className={styles.runItem}>
+              <Link href={`/history/${run.run_id}`} className={styles.run}>
+                <div className={styles.runText}>
+                  <p className={styles.runQuery}>{run.query_text}</p>
+                  <p className={styles.runMeta}>
+                    {formatDate(run.created_at)}
+                    {run.provider_used ? ` · ${run.provider_used}` : ""}
+                  </p>
+                </div>
+                <Badge>{run.status}</Badge>
+              </Link>
+            </li>
+          ))}
+        </ul>
+  </div>
     </div>
   );
 }
