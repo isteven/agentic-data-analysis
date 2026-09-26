@@ -2,7 +2,6 @@
 .tabBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
 }
 
 .tabList {
@@ -42,21 +41,27 @@
   color: var(--accent);
 }
 
+/* Export buttons: a right-aligned row at the top of the tab's content. */
 .exportActions {
   display: flex;
-  flex-shrink: 0;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .exportButton {
-  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 3px 10px;
   font-size: 12px;
   font-weight: 500;
+  line-height: 18px;
   white-space: nowrap;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .exportButton:hover {
+  background: var(--surface);
   color: var(--text-body);
 }
 
