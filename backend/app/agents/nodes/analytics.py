@@ -118,7 +118,9 @@ async def analytics_node(
         question=question,
         views=views,
         catalog=catalog,
-        model=node_model(state, NODE_NAME, "fast"),
+        # Quality tier: the fast model ran out of steps on multi-step questions (a share
+        # over two years), querying views by columns they don't have. Cost is secondary.
+        model=node_model(state, NODE_NAME, "quality"),
         run_sql_fn=partial(run_checked_sql, engine, catalog=catalog),
         trace=lambda kind, content: emit_trace(state, NODE_NAME, kind, content),
     )

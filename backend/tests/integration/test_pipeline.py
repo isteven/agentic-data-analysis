@@ -139,7 +139,13 @@ async def test_happy_path_answers_from_the_database_and_persists(seeded_db, llms
     assert stored.completed_at is not None
     assert len(trace) == len(state["trace_events"])
     # One LLM call per node, stored in the order they were made.
-    assert [c["node_name"] for c in calls] == ["intent", "coordinator", "analytics", "report_writer", "reviewer"]
+    assert [(c["node_name"], c["tier"]) for c in calls] == [
+        ("intent", "quality"),
+        ("coordinator", "fast"),
+        ("analytics", "quality"),  # the SQL planner: fast-tier plans failed on multi-step questions
+        ("report_writer", "quality"),
+        ("reviewer", "quality"),
+    ]
     assert stored.token_usage["calls"] == 5
 
 
