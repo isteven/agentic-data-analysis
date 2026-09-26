@@ -74,6 +74,8 @@ Logs are the integration point: set `LOG_FORMAT=json` in `backend/.env` and ever
 | `agent step` | `node_name`, `step_type`, `content` | what each agent did |
 | `run finished` | `status`, `duration_ms`, `llm_calls`, `errors`, `fallbacks` | run time, failure and fallback rates |
 
+**Health:** `GET /api/health` says the API process is up; `GET /api/health/ready` checks Postgres, Redis and that a worker is running, and answers 503 naming what's down.
+
 **LangSmith (optional):** the agents run on LangChain/LangGraph, so adding `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY` and `LANGSMITH_PROJECT` to `backend/.env` traces every graph step and LLM call, with no code change. Note this sends prompts and data to LangSmith.
 
 ## Sample questions

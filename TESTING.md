@@ -4,7 +4,7 @@ Results below are from 2026-09-26.
 
 | Layer | What it checks | Tests | Runs in | Result |
 |---|---|---|---|---|
-| Unit | Chart rules, SQL gate, planner loop, profiler, structure inference, views, token usage, provider fallback, mock LLM, run reliability (worker save/close, step error boundary), logging, rate limit and request validation | 148 | CI, every push | pass |
+| Unit | Chart rules, SQL gate, planner loop, profiler, structure inference, views, token usage, provider fallback, mock LLM, run reliability (worker save/close, step error boundary), logging, rate limit and request validation, JSON logs and log events, readiness check | 165 | CI, every push | pass |
 | Integration | The full agent graph on real Postgres with a scripted LLM; persistence; data accuracy against published figures; trace order; startup logging | 27 | CI (Postgres service) | pass |
 | LLM evals | The real pipeline and model: accuracy, consistency, no hallucination | 8 questions × 3 runs | Manual workflow (costs API calls) | 24/24 |
 | Load | The full stack under concurrent users, LLM mocked | Locust, 3 scenarios | Manual | 0 failures; see below |
