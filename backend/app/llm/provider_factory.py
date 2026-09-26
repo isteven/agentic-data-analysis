@@ -57,6 +57,10 @@ def build_provider(provider: ProviderName, model_tier: Tier) -> BaseChatModel:
         return _build_openai(settings, model_tier)
     if provider == ProviderName.BEDROCK:
         return _build_bedrock(settings, model_tier)
+    if provider == ProviderName.MOCK:
+        from app.llm.mock import MockChatModel
+
+        return MockChatModel(latency_ms=settings.llm_mock_latency_ms)
     if provider in (ProviderName.AZURE_OPENAI, ProviderName.VERTEX_AI):
         raise NotImplementedError(f"Provider '{provider}' not yet implemented")
     raise ValueError(f"Unknown provider: {provider}")
