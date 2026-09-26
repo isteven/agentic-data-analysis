@@ -26,8 +26,8 @@ export default function Home() {
   // Bumped whenever a turn finishes, so the sidebar re-fetches and shows the new entry.
   const completedCount = turns.filter((t) => t.result || t.error).length;
   // One question per chat: each run is answered on its own (no follow-up context yet),
-  // so once it's answered the prompt box goes and New Chat starts the next one.
-  const answered = completedCount > 0;
+  // so the prompt box goes as soon as the question is asked; New Chat starts the next one.
+  const asked = turns.length > 0;
 
   useEffect(() => {
     fetch(`${API_URL}/api/health/providers`)
@@ -90,7 +90,7 @@ export default function Home() {
           </main>
 
           <div className={`${shared.column} ${styles.composer}`}>
-            {!answered && (
+            {!asked && (
               <Composer
                 value={draft}
                 onChange={setDraft}
