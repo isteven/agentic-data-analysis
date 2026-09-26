@@ -123,6 +123,14 @@ Rules:
   100.0 * SUM(m) FILTER (WHERE <dimension> = '<value>') / SUM(m). Apply the population filter
   (the group the share is of) in WHERE so it limits both parts. A <view>_totals view has only
   the time column and summed measures, no dimensions, so it can't be filtered by category.
+- Answer at the level the question asks about. When it compares groups ("which university",
+  "which industry") and a view has several rows per group (e.g. one per degree), reduce to one
+  value per group first: AVG for measures that aren't summable (rates, means), SUM for
+  summable ones. MAX, MIN or a single row stand for the group only when the question asks for
+  the single best item ("which degree ..."). Say how you reduced in the interpretation (e.g.
+  "average across its degrees, unweighted").
+- When a measure comes in variants (an overall rate beside a narrower one, e.g. full-time
+  only), use the general one unless the question names the narrower one.
 - Never type a number from an earlier result into a query; the database computes every number.
 - If a query is rejected, read the message and fix the query.
 - Every answer is charted, so the final result must include the number(s) the answer rests
@@ -155,6 +163,12 @@ class PlannerResult:
 def describe(view: str, catalog: dict[str, list[dict]]) -> str:
     """The view's columns as the planner sees them: compact, one line per column."""
     lines = [f"data.{view}:"]
+    # What one row is, from the profile: answering "which university" from a view with a
+    # row per degree needs a reduction per university, and saying so up front is what
+    # makes that visible (hierarchy parents like <col>_level_1 don't add rows).
+    keys = [c["column"] for c in catalog[view] if c["role"] in ("time", "dimension") and not c.get("level_of")]
+    if keys:
+        lines.append(f"Each row: one {' x '.join(keys)}.")
     for c in catalog[view]:
         role = c["role"]
         parts = [f"- {c['column']} ({role}"]

@@ -75,6 +75,15 @@ CASES = [
         "SELECT 100.0 * SUM(value) FILTER (WHERE hours_bucket = '60 Hours & Over') / SUM(value)"
         " FROM data.mom_usual_hours_by_occupation WHERE year = 2025 AND sex = 'Female'",
     ),
+    Case(
+        # Natural wording: the data has one row per degree, so "which university" must be
+        # answered per university (average across its degrees), not by the top degree row.
+        "top_university_natural",
+        "Which university had the highest graduate employment rate in 2023?",
+        None,
+        "SELECT university FROM data.graduate_employment_survey WHERE year = 2023"
+        " GROUP BY university ORDER BY AVG(employment_rate_overall) DESC LIMIT 1",
+    ),
     Case("gdp_unanswerable", "What was Singapore's GDP growth rate in 2020?", None),
 ]
 
