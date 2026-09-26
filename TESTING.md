@@ -4,9 +4,10 @@ Results below are from 2026-09-26.
 
 | Layer | What it checks | Tests | Runs in | Result |
 |---|---|---|---|---|
-| Unit | Chart rules, SQL gate, planner loop, profiler, structure inference, views, token usage, provider fallback | 117 | CI, every push | pass |
-| Integration | The full agent graph on real Postgres with a scripted LLM; persistence; data accuracy against published figures | 22 | CI (Postgres service) | pass |
+| Unit | Chart rules, SQL gate, planner loop, profiler, structure inference, views, token usage, provider fallback, mock LLM | 123 | CI, every push | pass |
+| Integration | The full agent graph on real Postgres with a scripted LLM; persistence; data accuracy against published figures | 23 | CI (Postgres service) | pass |
 | LLM evals | The real pipeline and model: accuracy, consistency, no hallucination | 8 questions × 3 runs | Manual workflow (costs API calls) | 24/24 |
+| Load | The full stack under concurrent users, LLM mocked | Locust, 3 scenarios | Manual | 0 failures; see below |
 | Frontend | Lint, typecheck, production build | — | CI | pass |
 
 **Coverage:** 82% of backend lines (unit + integration); agent pipeline modules 89–100% (planner 92%, SQL gate 97%, reviewer 100%). CI uploads the unit coverage report.
@@ -60,6 +61,24 @@ The reviewer was tested on its own with fixed answers, 3 judgements per case:
 | Correct answer (average across degrees) | pass | 3/3 |
 | "Which degree…" answered by a single row (control) | pass | 3/3 |
 
+## Load and performance
+
+`backend/tests/performance/locustfile.py`. A load test on the real LLMs would mostly measure their rate limits, so the LLM is replaced by a **mock provider** (`app/llm/mock.py`) that returns deterministic, valid answers after a set delay. Everything else runs for real: API, SAQ queue, worker, agent graph, SQL gate, Postgres, persistence. `infra/docker-compose.loadtest.yml` switches to the mock and a separate `apda_load` database.
+
+Each simulated user asks a question and polls until it's done (**submit → done**, the wait a user sees), and browses history. 90 s runs (60 s for A), local Docker:
+
+| Scenario | Users | LLM delay | Workers | Runs done | Submit → done (median / p95) | API submit / poll (median) | Failures |
+|---|---|---|---|---|---|---|---|
+| A: infrastructure only | 10 | 0 | 1 | 183 in 60 s | 0.56 s / 0.58 s | 49 ms / 5 ms | 0 |
+| B: realistic LLM time | 20 | 1 s per call (~5 s per run) | 1 | 68 | 23 s / 24 s | 55 ms / 8 ms | 0 |
+| C: B with 3 workers | 20 | 1 s per call | 3 | 196 | 5.7 s / 7.2 s | 49 ms / 5 ms | 0 |
+
+- The stack itself adds **under 0.5 s** per run (A: every run was done at the first 0.5 s poll).
+- The limit is **worker capacity**, not the API: one worker runs 4 jobs at once, about 0.7 runs/s at ~5.5 s each (B measured 0.77/s), so runs queue. Throughput scales almost linearly with workers (3 workers: 2.9×, waits back to a run's own time). Scale with `docker compose up --scale worker=N`.
+- The API stayed fast throughout (polling at 34 requests/s, p95 14 ms).
+
+With real LLMs, provider rate limits come first: gpt-4o allows about 30k tokens/min on the tested account, roughly 12 calls a minute at ~2.5k tokens each.
+
 ## Data quality
 
 `tests/integration/test_data_accuracy.py` checks the loaded data, not the agents:
@@ -71,7 +90,6 @@ The reviewer was tested on its own with fixed answers, 3 judgements per case:
 
 ## Not covered
 
-- **Load and performance testing:** not done. Expected to be bound by LLM rate limits; a load test would need a mocked LLM to measure the infrastructure.
 - **Frontend behaviour:** no automated UI tests; changes were checked in a headless browser during development.
 - **Bedrock:** the evals ran on OpenAI; Bedrock was verified live but not through the eval suite.
 - **Relative time** ("the last five years") is resolved by the model and can vary between runs.

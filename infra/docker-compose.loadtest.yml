@@ -1,0 +1,17 @@
+# Load-test overlay: the backend and worker use the mock LLM (no API calls, simulated
+# latency) and a separate database, so test runs don't fill the real history.
+#   docker compose exec db createdb -U apda apda_load        # once
+#   LLM_MOCK_LATENCY_MS=1000 docker compose -f docker-compose.yml \
+#       -f docker-compose.loadtest.yml up -d --build backend worker
+# Scale the worker with --scale worker=N. Instructions: backend/tests/performance.
+x-loadtest-env: &loadtest-env
+  DATABASE_URL: postgresql+asyncpg://apda:apda@db:5432/apda_load
+  LLM_DEFAULT_PROVIDER: mock
+  LLM_FALLBACK_PROVIDER: mock
+  LLM_MOCK_LATENCY_MS: ${LLM_MOCK_LATENCY_MS:-1000}
+
+services:
+  backend:
+    environment: *loadtest-env
+  worker:
+    environment: *loadtest-env
