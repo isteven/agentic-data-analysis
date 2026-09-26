@@ -46,7 +46,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | LLM providers | OpenAI + AWS Bedrock, automatic fallback | OpenAI + Bedrock (Claude via `global.` inference profiles) via one factory; UI picker; automatic per-call fallback, traced. Verified live both ways (Bedrock only; OpenAI key broken -> Bedrock) | Built |
 | Data sources | data.gov.sg + MOM; CSV, Excel, live API | CSV + Excel from both sources; API client with file fallback built but unused since the dataset swap | Partial |
 | Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
-| Visualisations | Charts driven by backend chart specs | Planner proposes a chart spec, checked against the result columns (`app/agents/chart.py`); Recharts chart + data table | Built |
+| Visualisations | Charts driven by backend chart specs | Every answer with a number is charted. Code picks the type from the result's shape (time axis with 3+ periods: line; 2 periods, categories or one value: bar; >30 categories: the 15 at the end the question is about); the planner only suggests columns (`app/agents/chart.py`). Time-range questions are answered one row per period. Recharts; long labels as horizontal bars | Built |
 | History / export | History page; PDF / JSON / CSV export | `/history` list + detail page; chart export to PDF, table export to CSV (client-side); no JSON export | Partial |
 | Cost tracking | Tokens per LLM call and per run | Provider-reported tokens per call (`llm_calls`), per-model run totals, returned by the API, shown in a Token usage tab; no dollar estimate (by choice) | Built |
 | Testing | Unit, integration, LLM accuracy / consistency, data quality, load | 62 unit tests | Partial |
@@ -58,13 +58,14 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 ### 3.1 Current pipeline (built)
 
 ```
-START -> coordinator -> extraction -> analytics (ReAct SQL planner) -> report_writer -> validator -> reviewer -> END
+START -> intent -> coordinator -> extraction -> analytics (ReAct SQL planner) -> report_writer -> validator -> reviewer -> END
                                           ^  describe / sample / run_sql  |
                                           +------ observe, retry ---------+
 ```
 
 | Node | LLM? | What it does |
 |---|---|---|
+| **intent** | Yes (quality tier) | Restates the question as one precise reading (a share names its denominator; relative time becomes concrete years), declines what no dataset covers, and returns `time_range` ({start, end}) when the question spans periods, read from its meaning, not keywords (`app/agents/nodes/intent.py`) |
 | **coordinator** | Yes (fast tier) | Reads the dataset catalog (`manifest.yaml`) and picks the datasets relevant to the question (structured output) |
 | **extraction** | No | Checks each chosen dataset is stored, maps it to its typed view, and traces the data-quality facts inferred at ingest (totals/overlaps excluded, unverified periods, summable measures) |
 | **analytics** | Yes (quality tier; fast-tier plans ran out of steps on multi-step questions) | ReAct planner (`app/agents/planner.py`): tools `describe_view`, `sample_rows`, `run_sql`, then `submit_answer(sql, interpretation)` or `cannot_answer`. Max 8 tool calls. Every query goes through the SQL gate and read-only runner; a rejection is an observation the planner fixes. The submitted query's result becomes `Finding`s |
