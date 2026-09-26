@@ -36,6 +36,7 @@
   gap: 8px;
   width: 100%;
   margin-top: 32px; 
+  background-color: var(--background-sidebar);
 }
 
 @media (min-width: 640px) {
@@ -70,7 +71,8 @@
 }
 
 .footnote {
-  margin-top: 8px;
+  margin-top: 10px;
+  margin-bottom: 18px;
   text-align: center;
   font-size: 12px;
   color: var(--text-subtle);

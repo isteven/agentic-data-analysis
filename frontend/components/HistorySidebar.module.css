@@ -4,6 +4,7 @@
   flex-shrink: 0;
   width: 256px;
   border-right: 1px solid var(--border);
+  background-color: var(--background-sidebar);
 }
 
 /* Collapsed rail: just the "show" chevron. */
@@ -34,7 +35,7 @@
   font-weight: 600;
   letter-spacing: 0.025em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-muted);  
 }
 
 .hideButton {

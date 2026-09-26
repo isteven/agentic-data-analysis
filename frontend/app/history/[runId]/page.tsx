@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { ResultTabs } from "@/components/ChatMessage";
 import { AppHeader } from "@/components/AppHeader";
@@ -31,11 +30,10 @@ export default function HistoryDetailPage({ params }: { params: Promise<{ runId:
         <HistorySidebar />
 
         <div className={styles.detailScroll}>
-          <div className={`${shared.column} ${styles.detail}`}>
-            <Link href="/" className={styles.backLink}>
-              ← New chat
-            </Link>
-
+          <div className={`${shared.column} ${styles.detail}`}>            
+            {/* <Link href="/" className={styles.backLink}>
+              ← Back
+            </Link> */}
             {error && <p className={`${shared.error} ${styles.spaced}`}>{error}</p>}
             {!error && !result && <p className={`${shared.muted} ${styles.spaced}`}>Loading…</p>}
 

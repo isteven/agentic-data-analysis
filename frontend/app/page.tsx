@@ -61,13 +61,7 @@ export default function Home() {
 
   return (
     <div className={shared.shell}>
-      <AppHeader>
-        {turns.length > 0 && (
-          <button onClick={() => setTurns([])} disabled={busy} className={shared.outlineButton}>
-            New chat
-          </button>
-        )}
-      </AppHeader>
+      <AppHeader onNewChat={() => setTurns([])} newChatDisabled={busy} />
 
       <div className={shared.shellBody}>
         <HistorySidebar refreshKey={completedCount} />
@@ -109,7 +103,7 @@ export default function Home() {
               onProviderChange={setProvider}
             />
             <p className={styles.footnote}>
-              Every number is computed by the database and checked against the report.
+              AI can make mistakes. Please double-check responses.
             </p>
           </div>
         </div>
