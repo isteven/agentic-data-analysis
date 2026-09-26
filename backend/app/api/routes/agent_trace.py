@@ -39,7 +39,7 @@ async def _run_status(run_id: uuid.UUID) -> str | None:
 async def _persisted_trace(run_id: uuid.UUID) -> list[dict]:
     async with AsyncSessionLocal() as session:
         rows = await session.scalars(
-            select(AgentTrace).where(AgentTrace.run_id == run_id).order_by(AgentTrace.created_at)
+            select(AgentTrace).where(AgentTrace.run_id == run_id).order_by(AgentTrace.seq)
         )
         return [
             {"node_name": t.node_name, "step_type": t.step_type, "content": t.content}
