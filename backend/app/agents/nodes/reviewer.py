@@ -10,7 +10,6 @@ import json
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.llm import node_model
 from app.agents.nodes.analytics import views_in
@@ -19,6 +18,7 @@ from app.agents.state import AgentState, task_question
 from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
 from app.data.views import load_view_catalog
+from app.db.session import SessionFactory
 
 NODE_NAME = "reviewer"
 MAX_REVIEW_ROUNDS = 1  # re-routes per run: bounds cost at one extra planner/writer pass
@@ -50,14 +50,15 @@ def _format_result(analysis: dict) -> str:
     return f"{json.dumps(analysis['columns'])}\n{rows}{more}"
 
 
-async def reviewer_node(state: AgentState, session: AsyncSession) -> AgentState:
+async def reviewer_node(state: AgentState, session_factory: SessionFactory) -> AgentState:
     state["review_next"] = None
     analysis = state.get("analysis") or {}
     if not analysis.get("sql"):
         # Nothing was computed (declined or failed upstream): nothing to judge.
         return state
 
-    catalog = await load_view_catalog(session, load_manifest())
+    async with session_factory() as session:
+        catalog = await load_view_catalog(session, load_manifest())
     columns = "\n\n".join(describe(v, catalog) for v in views_in(analysis["sql"]) if v in catalog)
 
     emit_trace(

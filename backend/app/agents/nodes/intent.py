@@ -8,13 +8,13 @@ step (dataset choice, SQL, review) work on the same question.
 """
 
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.llm import node_model
 from app.agents.state import AgentState
 from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
 from app.data.views import load_view_catalog, view_name_for
+from app.db.session import SessionFactory
 
 NODE_NAME = "intent"
 
@@ -94,9 +94,10 @@ def _catalog(manifest: list[dict], views: dict[str, list[dict]]) -> str:
     return "\n".join(lines)
 
 
-async def intent_node(state: AgentState, session: AsyncSession) -> AgentState:
+async def intent_node(state: AgentState, session_factory: SessionFactory) -> AgentState:
     manifest = load_manifest()
-    views = await load_view_catalog(session, manifest)
+    async with session_factory() as session:
+        views = await load_view_catalog(session, manifest)
 
     emit_trace(state, NODE_NAME, "reasoning", "Restating the question precisely before planning.")
     # Quality tier: deciding what a question means (and whether the data covers it) is

@@ -12,8 +12,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 async def test_a_run_on_the_mock_provider_completes_grounded_and_charted(seeded_db):
-    async with AsyncSessionLocal() as session:
-        state = await execute_graph(session, "How many retrenchments?", uuid.uuid4(), provider="mock")
+    state = await execute_graph(AsyncSessionLocal, "How many retrenchments?", uuid.uuid4(), provider="mock")
 
     assert state["status"] == "completed"
     assert state["analysis"]["columns"] == ["row_count"]

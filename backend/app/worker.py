@@ -5,7 +5,6 @@ import uuid
 
 from saq import Queue
 
-from app.agents.graph import build_graph
 from app.agents.state import TraceEvent, new_state
 from app.agents.trace import (
     TRACE_STREAM_TTL_SECONDS,
@@ -15,7 +14,7 @@ from app.agents.trace import (
 )
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
-from app.services.query_service import persist_run
+from app.services.query_service import mark_run_failed, persist_run, run_graph
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,12 @@ async def run_query_task(
     ctx: dict, *, run_id: str, query_text: str, provider: str | None = None
 ) -> dict:
     """Runs the agent graph and appends each trace event to the run's Redis Stream as
-    it is emitted (read by GET /api/agent-trace/{run_id}), then persists the run."""
+    it is emitted (read by GET /api/agent-trace/{run_id}), then persists the run.
+
+    Whatever fails, the run ends: it is saved with a final status (or marked failed),
+    and the stream always gets "done" - otherwise a poller or SSE client waits for a
+    run that will never finish.
+    """
     redis = ctx["redis"]
     stream = trace_stream_key(run_id)
     run_uuid = uuid.UUID(run_id)
@@ -47,39 +51,50 @@ async def run_query_task(
     pump_task = asyncio.create_task(pump())
     token = set_trace_sink(pending.put_nowait)
 
-    async with AsyncSessionLocal() as session:
-        graph = build_graph(session)
-        state = new_state(query=query_text, run_id=run_id, provider=provider)
-        try:
-            final_state = await graph.ainvoke(state)
-            final_state["status"] = "completed" if not final_state.get("errors") else "partial"
-        except asyncio.CancelledError:
-            # SAQ cancels the task itself on a job timeout - a plain `except Exception`
-            # never sees this (CancelledError is a BaseException since 3.8). Without this
-            # branch the run is orphaned at status "running" forever: the DB row is
-            # never updated and the trace stream never gets a "done", so a poller or SSE
-            # client waits indefinitely - this is the "stall after a few queries" bug.
-            logger.warning("[DEBUG] run_query_task cancelled (job timeout) run_id=%s", run_id)
-            final_state = state
-            final_state["errors"].append(
-                {"node_name": "graph", "message": "Timed out before finishing."}
-            )
-            final_state["status"] = "failed"
-        except Exception as exc:  # unrecoverable graph failure: degrade gracefully
-            logger.exception("[DEBUG] graph failed run_id=%s", run_id)
-            final_state = state
-            final_state["errors"].append({"node_name": "graph", "message": str(exc)})
-            final_state["status"] = "failed"
-        finally:
-            reset_trace_sink(token)
-            pending.put_nowait(None)
-            await pump_task
-        run, _ = await persist_run(session, run_uuid, query_text, final_state)
+    state = new_state(query=query_text, run_id=run_id, provider=provider)
+    try:
+        final_state = await run_graph(AsyncSessionLocal, state)
+    except asyncio.CancelledError:
+        # SAQ cancels the task itself on a job timeout - a plain `except Exception`
+        # never sees this (CancelledError is a BaseException since 3.8). Without this
+        # branch the run is orphaned at status "running" forever.
+        logger.warning("[DEBUG] run_query_task cancelled (job timeout) run_id=%s", run_id)
+        state["errors"].append({"node_name": "graph", "message": "Timed out before finishing."})
+        state["status"] = "failed"
+        final_state = state
+    finally:
+        reset_trace_sink(token)
+        pending.put_nowait(None)
+        await pump_task
 
-    # After persist_run, so a subscriber that sees "done" can fetch the finished run.
-    await redis.xadd(stream, {"done": run.status})
-    await redis.expire(stream, TRACE_STREAM_TTL_SECONDS)
-    return {"run_id": run_id, "status": run.status}
+    status = await _save(run_uuid, query_text, final_state)
+    await _close_stream(redis, stream, status, run_id)
+    return {"run_id": run_id, "status": status}
+
+
+async def _save(run_id: uuid.UUID, query_text: str, final_state: dict) -> str:
+    """Persist the run in a fresh session; if that fails, at least end it as failed."""
+    try:
+        async with AsyncSessionLocal() as session:
+            run, _ = await persist_run(session, run_id, query_text, final_state)
+            return run.status
+    except Exception:
+        logger.exception("[DEBUG] persist_run failed run_id=%s; marking the run failed", run_id)
+    try:
+        async with AsyncSessionLocal() as session:
+            await mark_run_failed(session, run_id, "The run finished but couldn't be saved.")
+    except Exception:
+        logger.exception("[DEBUG] mark_run_failed failed run_id=%s", run_id)
+    return "failed"
+
+
+async def _close_stream(redis, stream: str, status: str, run_id: str) -> None:
+    """After the save, so a subscriber that sees "done" can fetch the finished run."""
+    try:
+        await redis.xadd(stream, {"done": status})
+        await redis.expire(stream, TRACE_STREAM_TTL_SECONDS)
+    except Exception:  # subscribers fall back to polling the saved run
+        logger.exception("[DEBUG] closing trace stream failed run_id=%s", run_id)
 
 
 async def startup(ctx: dict) -> None:

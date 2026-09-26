@@ -14,6 +14,7 @@ from app.agents.state import AgentState
 from app.agents.trace import emit_trace
 from app.data.manifest import load_manifest
 from app.data.views import view_name_for
+from app.db.session import SessionFactory
 from app.models.dataset import Dataset
 from app.models.dataset_record import DatasetRecord
 
@@ -44,7 +45,13 @@ def quality_summary(profile: list[dict]) -> str:
     return "; ".join(notes) or "no issues found"
 
 
-async def extraction_node(state: AgentState, session: AsyncSession) -> AgentState:
+async def extraction_node(state: AgentState, session_factory: SessionFactory) -> AgentState:
+    # No LLM calls here, so one short session covers every lookup.
+    async with session_factory() as session:
+        return await _check_datasets(state, session)
+
+
+async def _check_datasets(state: AgentState, session: AsyncSession) -> AgentState:
     manifest_by_id = {entry["id"]: entry for entry in load_manifest()}
 
     for step in state["plan"]:
