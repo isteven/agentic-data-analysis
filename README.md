@@ -61,7 +61,7 @@ RUN_LLM_EVALS=1 TEST_DATABASE_URL=... PYTHONPATH=. \
   uv run pytest tests/integration/test_llm_evals.py -s     # real LLM (costs API calls)
 ```
 
-Frontend: `npm run lint` and `npm run build` in `frontend/`. CI runs all of this except the LLM evals (a manual workflow). Strategy and results: [TESTING.md](TESTING.md).
+Frontend: `npm run lint` and `npm run build` in `frontend/`. CI runs all of this except the LLM evals (a manual workflow). Load test (Locust, mocked LLM): see `backend/tests/performance/locustfile.py`. Strategy and results: [TESTING.md](TESTING.md).
 
 ## Sample questions
 

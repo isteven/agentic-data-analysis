@@ -228,7 +228,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 - pandas and openpyxl run on the async event loop inside the worker, so one run's computation stalls the others in the same process (SAQ concurrency 4) -> move to a thread.
 - One database session is held for the whole run, including LLM calls -> use short-lived sessions.
 - Live API datasets are fetched in full on every query -> cache them (no dataset uses the API right now).
-- Load tests will mostly hit LLM rate limits -> also test with a mocked LLM.
+- **Measured** (Locust, mocked LLM, TESTING.md): the stack adds under 0.5 s per run; the limit is worker capacity (one worker runs 4 jobs at once, ~0.7 runs/s at ~5 s of LLM time per run), and throughput scales almost linearly with `--scale worker=N` (3 workers: 2.9x). With real LLMs, provider rate limits come first.
 
 ### 9.2 Cost
 

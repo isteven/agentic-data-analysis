@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://apda:apda@db:5432/apda"
     redis_url: str = "redis://redis:6379/0"
 
-    llm_default_provider: Literal["openai", "bedrock"] = "openai"
-    llm_fallback_provider: Literal["openai", "bedrock"] = "bedrock"
+    # "mock": load testing only (app/llm/mock.py, infra/docker-compose.loadtest.yml).
+    llm_default_provider: Literal["openai", "bedrock", "mock"] = "openai"
+    llm_fallback_provider: Literal["openai", "bedrock", "mock"] = "bedrock"
     # 0 = same question, same answer: needed for SQL generation and consistency tests.
     # Without it providers default to 1.0 (OpenAI), which varied answers run to run.
     llm_temperature: float = 0.0
@@ -30,6 +31,8 @@ class Settings(BaseSettings):
     aws_region: str = "ap-southeast-1"
     bedrock_model_id_fast: str = ""
     bedrock_model_id_quality: str = ""
+    # Mock provider (LLM_DEFAULT_PROVIDER=mock, load testing): simulated time per LLM call.
+    llm_mock_latency_ms: int = 0
 
     cors_origin: str = "http://localhost:3000"
     rate_limit_queries_per_minute: int = 10
