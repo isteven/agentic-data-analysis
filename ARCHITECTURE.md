@@ -48,7 +48,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
 | Visualisations | Charts driven by backend chart specs | Planner proposes a chart spec, checked against the result columns (`app/agents/chart.py`); Recharts chart + data table | Built |
 | History / export | History page; PDF / JSON / CSV export | `/history` list + detail page; chart export to PDF, table export to CSV (client-side); no JSON export | Partial |
-| Cost tracking | Tokens per LLM call and per run | Provider-reported tokens per call (`llm_calls`), per-model run totals, returned by the API; no UI yet; no dollar estimate (by choice) | Partial |
+| Cost tracking | Tokens per LLM call and per run | Provider-reported tokens per call (`llm_calls`), per-model run totals, returned by the API, shown in a Token usage tab; no dollar estimate (by choice) | Built |
 | Testing | Unit, integration, LLM accuracy / consistency, data quality, load | 62 unit tests | Partial |
 | CI/CD | GitHub Actions | None | Planned |
 | Deployment | Docker Compose (5 services) + one-time validated AWS deploy | Docker Compose, 4 services (no worker yet) | Partial |
@@ -210,7 +210,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 
 ## 8. Frontend
 
-- **Built:** a chat-style query interface (`frontend/app/page.tsx`) with a provider picker; each answer has three tabs: Report (chart from `components/ResultChart.tsx`, Recharts, above the report text), Data (query result table, `components/ResultTable.tsx`) and Agent steps (`components/AgentTrace.tsx`). Agent steps stream live over SSE while a run is in progress (`lib/runs.ts`), falling back to polling `GET /api/queries/{run_id}` if the stream drops. `/history` lists past runs; `/history/{runId}` shows the full result. Report tab has Export PNG / PDF for the chart (SVG rasterized; PDF via `jspdf`); Data tab has Export CSV (client-side, no backend export endpoint).
+- **Built:** a chat-style query interface (`frontend/app/page.tsx`) with a provider picker; each answer has up to four tabs: Report (chart from `components/ResultChart.tsx`, Recharts, above the report text), Data (query result table, `components/ResultTable.tsx`), Agent steps (`components/AgentTrace.tsx`) and Token usage (`components/TokenUsage.tsx`: totals per model and each LLM call, as the provider reported them; shown once a run has usage). Agent steps stream live over SSE while a run is in progress (`lib/runs.ts`), falling back to polling `GET /api/queries/{run_id}` if the stream drops. `/history` lists past runs; `/history/{runId}` shows the full result. Report tab has Export PNG / PDF for the chart (SVG rasterized; PDF via `jspdf`); Data tab has Export CSV (client-side, no backend export endpoint).
 - **Planned:** citations panel; data-quality panel; JSON export; follow-up questions using earlier turns as context (needs the session-id backend work in `project-management.md`'s M2.3, not yet done).
 - **State:** TanStack Query for server data; no global state library (no need for one at this size).
 

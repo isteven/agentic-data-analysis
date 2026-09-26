@@ -5,6 +5,7 @@ import { AgentTrace } from "@/components/AgentTrace";
 import { Markdown } from "@/components/Markdown";
 import { hasChart, ResultChart } from "@/components/ResultChart";
 import { ResultTable } from "@/components/ResultTable";
+import { TokenUsage } from "@/components/TokenUsage";
 import { exportChartAsPdf, exportChartAsPng, exportTableAsCsv } from "@/lib/export";
 import type { ChatTurn, QueryResponse } from "@/lib/types";
 import styles from "./ChatMessage.module.css";
@@ -25,7 +26,7 @@ const STATUS_NOTES: Record<string, string> = {
   failed: "The run failed — see the agent steps for details.",
 };
 
-type TabId = "report" | "data" | "steps";
+type TabId = "report" | "data" | "steps" | "tokens";
 
 interface Tab {
   id: TabId;
@@ -40,6 +41,7 @@ function availableTabs(result: QueryResponse, withChart: boolean): Tab[] {
     tabs.push({ id: "data", label: `Data (${result.analysis.rows.length})` });
   }
   if (result.trace.length > 0) tabs.push({ id: "steps", label: `Agent steps (${result.trace.length})` });
+  if (result.token_usage && result.token_usage.calls > 0) tabs.push({ id: "tokens", label: "Token usage" });
   return tabs;
 }
 
@@ -115,6 +117,7 @@ export function ResultTabs({ query, result }: { query: string; result: QueryResp
         )}
         {active === "data" && result.analysis && <ResultTable analysis={result.analysis} />}
         {active === "steps" && <AgentTrace steps={result.trace} />}
+        {active === "tokens" && result.token_usage && <TokenUsage usage={result.token_usage} />}
       </div>
     </div>
   );
