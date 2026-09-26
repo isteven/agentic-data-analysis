@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.rate_limit import limit_queries
 from app.core.config import get_settings
 from app.db.session import get_session
 from app.schemas.query import Analysis, QueryRequest, QueryResponse, TokenUsage, TraceStep
@@ -33,7 +34,12 @@ def _to_response(run, trace_events: list[dict], llm_calls: list[dict] | None = N
     )
 
 
-@router.post("/api/queries", response_model=QueryResponse, status_code=202)
+@router.post(
+    "/api/queries",
+    response_model=QueryResponse,
+    status_code=202,
+    dependencies=[Depends(limit_queries)],
+)
 async def submit_query(
     body: QueryRequest,
     response: Response,

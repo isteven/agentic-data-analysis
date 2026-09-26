@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { watchRun } from "@/lib/runs";
+import { submitQuery, watchRun } from "@/lib/runs";
 import type { QueryResponse } from "@/lib/types";
 
 /** Stands in for the browser's EventSource: the test drives its events. */
@@ -100,5 +100,23 @@ describe("watchRun", () => {
 
     expect(FakeEventSource.last.closed).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("submitQuery", () => {
+  it("shows the server's message when a question is refused", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      json: async () => ({ detail: "Too many questions. Please wait 42 seconds and try again." }),
+    });
+
+    await expect(submitQuery("q")).rejects.toThrow("Too many questions. Please wait 42 seconds and try again.");
+  });
+
+  it("falls back to the status code when the server gives no message", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500, json: async () => { throw new Error("not json"); } });
+
+    await expect(submitQuery("q")).rejects.toThrow("HTTP 500");
   });
 });

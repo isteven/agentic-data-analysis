@@ -1,13 +1,18 @@
 from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 
-from app.llm.config import ProviderName
+MAX_QUESTION_CHARS = 2000
 
 
 class QueryRequest(BaseModel):
-    query: str
-    provider: ProviderName | None = None  # None = server default (LLM_DEFAULT_PROVIDER)
+    query: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_QUESTION_CHARS)
+    ]
+    # Only the real providers: "mock" (load testing) and the unbuilt azure/vertex stubs
+    # are server-side settings, never a client's choice. None = LLM_DEFAULT_PROVIDER.
+    provider: Literal["openai", "bedrock"] | None = None
 
 
 class TraceStep(BaseModel):
