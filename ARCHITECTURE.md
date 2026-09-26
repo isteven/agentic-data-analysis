@@ -48,7 +48,7 @@ data.gov.sg Datastore API (client built, no dataset uses it now), local dataset 
 | Database | PostgreSQL | PostgreSQL, 7 tables + generated `data` views, Alembic migrations | Built |
 | Visualisations | Charts driven by backend chart specs | Planner proposes a chart spec, checked against the result columns (`app/agents/chart.py`); Recharts chart + data table | Built |
 | History / export | History page; PDF / JSON / CSV export | `/history` list + detail page; chart export to PDF, table export to CSV (client-side); no JSON export | Partial |
-| Cost tracking | Tokens and estimated cost per run | None | Planned |
+| Cost tracking | Tokens per LLM call and per run | Provider-reported tokens per call (`llm_calls`), per-model run totals, returned by the API; no UI yet; no dollar estimate (by choice) | Partial |
 | Testing | Unit, integration, LLM accuracy / consistency, data quality, load | 62 unit tests | Partial |
 | CI/CD | GitHub Actions | None | Planned |
 | Deployment | Docker Compose (5 services) + one-time validated AWS deploy | Docker Compose, 4 services (no worker yet) | Partial |
@@ -188,9 +188,10 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 |---|---|---|
 | `datasets` | Catalog row per dataset: source, mode, file path, content hash, `quality_report` (incl. profiler version) and `schema_profile` (JSON, incl. inferred structure) | Yes |
 | `dataset_records` | Every cleaned source row as a JSONB document; read through the generated views in the `data` schema | Written by seeding; read by the SQL planner through the views |
-| `analysis_runs` | One per query: text, status, provider, report | Yes; `session_id`, `query_hash`, `chart_specs`, `token_usage`, `estimated_cost_usd` columns reserved for planned features |
+| `analysis_runs` | One per query: text, status, provider, report, `token_usage` (per-model totals) | Yes; `session_id`, `query_hash`, `estimated_cost_usd` columns reserved for planned features |
 | `analysis_run_datasets` | Which datasets a run used | Yes |
 | `agent_traces` | Persisted trace events | Yes |
+| `llm_calls` | One row per LLM attempt: node, tier, provider, model, input / output / cached input tokens, latency, outcome | Yes |
 | `findings` | Computed values with dataset and field reference | Yes |
 | `sessions` | Chat sessions | Reserved (planned chat UI) |
 
@@ -200,7 +201,7 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 |---|---|---|
 | `POST /api/queries` | Built (synchronous) -> planned: returns `202` + `run_id` | Submit a question |
 | `GET /api/health`, `GET /api/health/providers` | Built | Liveness; which providers are configured |
-| `GET /api/queries/{run_id}` | Built | Poll result (fallback if the stream drops, once SSE exists; only path today) |
+| `GET /api/queries/{run_id}` | Built | Poll result (fallback if the stream drops); includes `token_usage` (per-model totals + each call) once the run finishes |
 | `GET /api/agent-trace/{run_id}` | Built | Live trace via SSE |
 | `GET /api/analyses` | Built | History list (query, status, provider, timestamps); detail reuses `GET /api/queries/{run_id}` |
 | `GET /api/datasets` | Planned | Dataset catalog |
@@ -231,7 +232,9 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 ### 9.2 Cost
 
 - **Built:** model tiering (fast / quality); prompts contain findings, never raw data.
-- **Planned:** token and cost tracking per run at the provider factory; response cache for repeat questions; `max_tokens` cap per step; cache for live API data.
+- **Built -- token usage:** `FallbackChatModel` attaches a LangChain callback to every attempt and records the token counts the provider reports (`usage_metadata`: input, output, cached input), the model that answered, latency and outcome (`app/llm/usage.py`). `node_model()` tags each call with its node and tier; rows go to `llm_calls`, per-model totals to `analysis_runs.token_usage`. Counts are the provider's own, not estimated. Totals are per model only: models tokenize differently, so a fallback run has one entry per model and no grand total. A failed attempt that got no answer has zero tokens; one that answered but failed parsing keeps its billed tokens.
+- **Why tokens, not dollars:** a dollar figure needs a hand-maintained price table and would still be an estimate; tokens are exact.
+- **Planned:** response cache for repeat questions; `max_tokens` cap per step; cache for live API data.
 
 ### 9.3 Security and privacy
 
