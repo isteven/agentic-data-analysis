@@ -16,9 +16,10 @@ from app.agents.nodes import analytics, coordinator, intent, report_writer, revi
 from app.agents.nodes.coordinator import CoordinatorPlan, PlanStepOutput
 from app.agents.nodes.intent import Intent
 from app.agents.nodes.reviewer import Review
+from app.agents.state import new_state
 from app.db.session import AsyncSessionLocal
 from app.llm.provider_factory import FallbackChatModel
-from app.services.query_service import execute_graph, get_run, persist_run
+from app.services.query_service import execute_graph, get_llm_calls, get_run, persist_run
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -94,8 +95,8 @@ def llms(monkeypatch):
         monkeypatch.setattr(
             llm,
             "get_chat_model",
-            lambda provider=None, tier=None, on_fallback=None: FallbackChatModel(
-                models, on_fallback
+            lambda provider=None, tier=None, on_fallback=None, on_usage=None: FallbackChatModel(
+                models, on_fallback, on_usage
             ),
         )
         return real_node_model(state, node_name, model_tier)
@@ -133,9 +134,13 @@ async def test_happy_path_answers_from_the_database_and_persists(seeded_db, llms
         run_id = uuid.UUID(state["run_id"])
         await persist_run(session, run_id, QUESTION, state)
         stored, trace = await get_run(session, run_id)
+        calls = await get_llm_calls(session, run_id)
     assert stored.status == "completed"
     assert stored.completed_at is not None
     assert len(trace) == len(state["trace_events"])
+    # One LLM call per node, stored in the order they were made.
+    assert [c["node_name"] for c in calls] == ["intent", "coordinator", "analytics", "report_writer", "reviewer"]
+    assert stored.token_usage["calls"] == 5
 
 
 async def test_reviewer_sends_a_wrong_analysis_back_to_the_planner(seeded_db, llms):
@@ -202,6 +207,8 @@ async def test_a_failed_provider_falls_back_and_the_switch_is_traced(seeded_db, 
 
     assert state["status"] == "completed"
     assert state["fallbacks"] == ["openai->bedrock"]
+    coordinator_calls = [(c["provider"], c["outcome"]) for c in state["llm_calls"] if c["node_name"] == "coordinator"]
+    assert coordinator_calls == [("openai", "failed"), ("bedrock", "ok")]
     assert any("openai failed (ConnectionError); retried on bedrock" in t for t in trace_text(state, "coordinator"))
 
 
@@ -242,3 +249,45 @@ async def test_the_intent_rewrite_is_what_the_agents_work_on(seeded_db, llms):
     assert state["intent_query"] == precise
     assert f"Interpreted as: {precise}" in trace_text(state, "intent")
     assert state["query"] == "layoffs of locals in 2020?"  # the user's words are kept
+
+
+async def test_token_usage_is_stored_per_call_and_summed_per_model(seeded_db):
+    run_id = uuid.uuid4()
+    state = new_state(QUESTION, str(run_id))
+    state["status"] = "completed"
+    state["llm_calls"] = [
+        llm_call("openai", "gpt-4o-mini-2024-07-18", 1200, 80, cached=1024, node="intent"),
+        llm_call("openai", "gpt-4o-mini-2024-07-18", 0, 0, outcome="failed", node="analytics"),
+        llm_call("bedrock", "claude-haiku-4-5", 900, 60, node="analytics"),
+    ]
+
+    async with AsyncSessionLocal() as session:
+        await persist_run(session, run_id, QUESTION, state)
+        stored, _ = await get_run(session, run_id)
+        calls = await get_llm_calls(session, run_id)
+
+    assert calls == state["llm_calls"]  # every field round-trips, in order
+    assert stored.token_usage == {
+        "calls": 3,
+        "failed_calls": 1,
+        "by_model": [
+            {"provider": "openai", "model": "gpt-4o-mini-2024-07-18", "calls": 2,
+             "input_tokens": 1200, "output_tokens": 80, "cached_input_tokens": 1024},
+            {"provider": "bedrock", "model": "claude-haiku-4-5", "calls": 1,
+             "input_tokens": 900, "output_tokens": 60, "cached_input_tokens": 0},
+        ],
+    }
+
+
+def llm_call(provider, model, inp, out, cached=0, outcome="ok", node="analytics"):
+    return {
+        "node_name": node,
+        "tier": "fast",
+        "provider": provider,
+        "model": model,
+        "input_tokens": inp,
+        "output_tokens": out,
+        "cached_input_tokens": cached,
+        "latency_ms": 42,
+        "outcome": outcome,
+    }

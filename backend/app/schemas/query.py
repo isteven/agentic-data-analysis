@@ -37,6 +37,39 @@ class Analysis(BaseModel):
     chart: ChartSpec | None = None
 
 
+class LlmCall(BaseModel):
+    """One LLM attempt, with the token counts its provider reported."""
+
+    node_name: str
+    tier: str
+    provider: str
+    model: str | None = None
+    input_tokens: int  # includes cached_input_tokens
+    output_tokens: int
+    cached_input_tokens: int
+    latency_ms: int
+    outcome: str  # ok | failed
+
+
+class ModelUsage(BaseModel):
+    provider: str
+    model: str | None = None
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cached_input_tokens: int
+
+
+class TokenUsage(BaseModel):
+    """Totals per model only: different models' tokens aren't comparable, so a run that
+    fell back to another provider has one entry per model, and no grand total."""
+
+    calls: int
+    failed_calls: int
+    by_model: list[ModelUsage]
+    per_call: list[LlmCall]
+
+
 class QueryResponse(BaseModel):
     run_id: str
     query_text: str
@@ -45,6 +78,7 @@ class QueryResponse(BaseModel):
     report_markdown: str | None = None
     trace: list[TraceStep] = []
     analysis: Analysis | None = None
+    token_usage: TokenUsage | None = None  # None while running, or for runs before tracking
 
 
 class AnalysisSummary(BaseModel):

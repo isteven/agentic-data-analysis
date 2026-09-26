@@ -7,10 +7,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.graph import build_graph
 from app.agents.state import new_state
 from app.core.config import get_settings
+from app.llm.usage import summarize_usage
 from app.models.agent_trace import AgentTrace
 from app.models.analysis_run import AnalysisRun, AnalysisRunDataset
 from app.models.dataset import Dataset
 from app.models.finding import Finding
+from app.models.llm_call import LlmCallRecord
+
+# Fields of a state["llm_calls"] entry, as stored per row in llm_calls.
+_LLM_CALL_FIELDS = (
+    "node_name",
+    "tier",
+    "provider",
+    "model",
+    "input_tokens",
+    "output_tokens",
+    "cached_input_tokens",
+    "latency_ms",
+    "outcome",
+)
 
 
 async def execute_graph(
@@ -62,6 +77,8 @@ async def persist_run(
     run.report_markdown = final_state.get("report_markdown")
     # the query result + chart spec: what the dashboard draws, kept for history
     run.chart_specs = final_state.get("analysis")
+    llm_calls = final_state.get("llm_calls", [])
+    run.token_usage = summarize_usage(llm_calls)
     run.completed_at = datetime.now(UTC)
     await session.flush()
 
@@ -100,6 +117,9 @@ async def persist_run(
                 content=event["content"],
             )
         )
+
+    for seq, call in enumerate(llm_calls):
+        session.add(LlmCallRecord(run_id=run_id, seq=seq, **{f: call[f] for f in _LLM_CALL_FIELDS}))
 
     await session.commit()
     return run, trace_events
@@ -145,3 +165,12 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> tuple[AnalysisRun
         {"node_name": t.node_name, "step_type": t.step_type, "content": t.content} for t in trace_rows
     ]
     return run, trace_events
+
+
+async def get_llm_calls(session: AsyncSession, run_id: uuid.UUID) -> list[dict]:
+    """A run's LLM attempts in the order they were made, with their token usage.
+    Empty for a run still in progress, or one from before usage was recorded."""
+    rows = await session.scalars(
+        select(LlmCallRecord).where(LlmCallRecord.run_id == run_id).order_by(LlmCallRecord.seq)
+    )
+    return [{f: getattr(row, f) for f in _LLM_CALL_FIELDS} for row in rows]

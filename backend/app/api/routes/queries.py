@@ -5,14 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import get_session
-from app.schemas.query import Analysis, QueryRequest, QueryResponse, TraceStep
-from app.services.query_service import create_run, get_run
+from app.schemas.query import Analysis, QueryRequest, QueryResponse, TokenUsage, TraceStep
+from app.services.query_service import create_run, get_llm_calls, get_run
 from app.worker import queue
 
 router = APIRouter()
 
 
-def _to_response(run, trace_events: list[dict]) -> QueryResponse:
+def _to_response(run, trace_events: list[dict], llm_calls: list[dict] | None = None) -> QueryResponse:
+    # run.token_usage is written when the run finishes; None means still running, or a
+    # run from before token usage was recorded.
+    token_usage = (
+        TokenUsage(**run.token_usage, per_call=llm_calls or []) if run.token_usage else None
+    )
     return QueryResponse(
         run_id=str(run.id),
         query_text=run.query_text,
@@ -21,6 +26,7 @@ def _to_response(run, trace_events: list[dict]) -> QueryResponse:
         report_markdown=run.report_markdown,
         trace=[TraceStep(**event) for event in trace_events],
         analysis=Analysis(**run.chart_specs) if run.chart_specs else None,
+        token_usage=token_usage,
     )
 
 
@@ -55,4 +61,5 @@ async def get_query(run_id: uuid.UUID, session: AsyncSession = Depends(get_sessi
     found = await get_run(session, run_id)
     if found is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return _to_response(*found)
+    run, trace_events = found
+    return _to_response(run, trace_events, await get_llm_calls(session, run_id))
