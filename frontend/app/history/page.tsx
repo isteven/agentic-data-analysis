@@ -20,12 +20,15 @@ export default function HistoryPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAnalyses()
+    const controller = new AbortController();
+    fetchAnalyses(controller.signal)
       .then(setRuns)
       .catch((err) => {
+        if (controller.signal.aborted) return;
         console.error(`[DEBUG] ${new Date().toISOString()} history fetch failed`, err);
         setError(err instanceof Error ? err.message : "Something went wrong");
       });
+    return () => controller.abort();
   }, []);
 
   return (

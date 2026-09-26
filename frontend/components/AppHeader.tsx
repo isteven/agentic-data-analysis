@@ -7,11 +7,10 @@ interface Props {
   /** On the chat page: clears the conversation. A link to "/" can't, because
    *  navigating to the page you're on keeps its state. Elsewhere it's a link. */
   onNewChat?: () => void;
-  newChatDisabled?: boolean;
 }
 
 /** Full-width app bar above both the history sidebar and the main pane. */
-export function AppHeader({ onNewChat, newChatDisabled }: Props) {
+export function AppHeader({ onNewChat }: Props) {
   return (
     <header className={styles.header}>
       <Link href="/" className={styles.title}>
@@ -19,7 +18,7 @@ export function AppHeader({ onNewChat, newChatDisabled }: Props) {
         <span className={styles.titleOnly}>POLICY DATA ANALYTICS</span>
       </Link>
       {onNewChat ? (
-        <button onClick={onNewChat} disabled={newChatDisabled} className={styles.outlineButton}>
+        <button onClick={onNewChat} className={styles.outlineButton}>
           New Chat
         </button>
       ) : (

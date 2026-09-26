@@ -23,9 +23,15 @@ export function HistorySidebar({ refreshKey }: { refreshKey?: unknown }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    fetchAnalyses()
+    // Aborted on the next refresh or unmount, so a slow earlier response can't
+    // overwrite a newer one.
+    const controller = new AbortController();
+    fetchAnalyses(controller.signal)
       .then(setRuns)
-      .catch((err) => console.error(`[DEBUG] ${new Date().toISOString()} sidebar history fetch failed`, err));
+      .catch((err) => {
+        if (!controller.signal.aborted) console.error(`[DEBUG] ${new Date().toISOString()} sidebar history fetch failed`, err);
+      });
+    return () => controller.abort();
   }, [refreshKey]);
 
   if (collapsed) {
