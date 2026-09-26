@@ -1,5 +1,7 @@
 from typing import TypedDict
 
+from app.llm.usage import CallUsage
+
 
 class PlanStep(TypedDict):
     dataset_id: str
@@ -28,6 +30,13 @@ class FindingDict(TypedDict):
     field_ref: str | None
 
 
+class LlmCall(CallUsage):
+    """One LLM attempt, tagged with the node that made it (app/agents/llm.py)."""
+
+    node_name: str
+    tier: str  # fast | quality
+
+
 class AgentError(TypedDict):
     node_name: str
     message: str
@@ -53,6 +62,7 @@ class AgentState(TypedDict):
     run_id: str
     provider: str | None  # requested provider; None = LLM_DEFAULT_PROVIDER
     fallbacks: list[str]  # "openai->bedrock" for each call that switched provider
+    llm_calls: list[LlmCall]  # every LLM attempt with its provider-reported token usage
     plan: list[PlanStep]
     raw_extracts: list[RawExtract]
     analysis: Analysis | None
@@ -75,6 +85,7 @@ def new_state(query: str, run_id: str, provider: str | None = None) -> AgentStat
         run_id=run_id,
         provider=provider,
         fallbacks=[],
+        llm_calls=[],
         plan=[],
         raw_extracts=[],
         analysis=None,
