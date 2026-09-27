@@ -30,9 +30,11 @@ Browser (Next.js) ──POST /api/queries──▶ FastAPI ──enqueue──�
 
 Design, trade-offs and rejected alternatives: [ARCHITECTURE.md](ARCHITECTURE.md). Where it would go next, for secure government use: [INNOVATION.md](INNOVATION.md).
 
-## Run it (Docker Compose)
+## Setup & run
 
-Requirements: Docker, an OpenAI API key.
+### Docker Compose
+
+Requirements: Docker, an OpenAI API key (also add AWS Bedrock access if you want to test both providers)
 
 ```bash
 cp backend/.env.example backend/.env      # set OPENAI_API_KEY
@@ -46,7 +48,83 @@ Open http://localhost:3000. Startup migrates the database and loads the datasets
 - **Bedrock (optional):** set `LLM_ENABLE_BEDROCK=true`, AWS credentials and `BEDROCK_MODEL_ID_*` in `backend/.env`. Pick the provider per question in the UI; if one fails, the call retries on the other.
 - **Frontend hot reload:** `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build`
 
+### Without Docker
+
+Requirements: 
+- PostgreSQL 16
+- [uv](https://docs.astral.sh/uv/) (installs Python 3.12+ itself)
+- Node.js 20
+- OpenAI API key (Optional: AWS Bedrock access key). 
+- Redis 7. On Windows, Redis has no official native build: run it in WSL or a container. If the Compose stack is running, stop it first (it uses the same ports: 5432, 6379, 8000, 3000).
+
+Start the services in this order; the backend services each run in their own terminal.
+
+**1. PostgreSQL:** create the app's user and database (as the `postgres` superuser, e.g. `psql -U postgres`):
+
+```sql
+CREATE ROLE apda LOGIN PASSWORD 'apda' CREATEROLE;
+CREATE DATABASE apda OWNER apda;
+```
+
+`CREATEROLE` is needed once, by the migrations: they create the `data_reader` role that the agents' SQL runs as (read-only, views only). The user doesn't need to be a superuser.
+
+**2. Redis:** start it on the default port and check it answers: `redis-cli ping` → `PONG`.
+
+**3. Backend configuration:**
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+In `backend/.env`, set `OPENAI_API_KEY`, and point the two service URLs at `localhost` instead of the Compose service names:
+
+```
+DATABASE_URL=postgresql+asyncpg://apda:apda@localhost:5432/apda
+REDIS_URL=redis://localhost:6379/0
+```
+
+**4. Backend dependencies** (from `backend/`): `uv sync`
+
+**5. API** (terminal 1, from `backend/`):
+
+```bash
+uv run uvicorn app.main:app --port 8000
+```
+
+On startup it runs the database migrations and loads the datasets (a few seconds the first time; skipped later while the files are unchanged). Wait for `Application startup complete`, then check http://localhost:8000/api/health.
+
+**6. Worker** (terminal 2, from `backend/`): runs the agents for each question.
+
+```bash
+uv run python -m saq app.worker.settings_dict
+```
+
+Check http://localhost:8000/api/health/ready: `database`, `redis` and `worker` should all be `ok`.
+
+**7. Frontend** (terminal 3):
+
+```bash
+cd frontend
+cp .env.example .env          # NEXT_PUBLIC_API_URL=http://localhost:8000
+npm install
+npm run dev
+```
+
+Open http://localhost:3000 and ask a question; the agent steps appear live. Run the backend commands from `backend/`: that is where `.env` is read from.
+
 ## Tests
+
+None of the backend tests need the API, the worker or Redis running: the integration tests and LLM evals run the agent graph in-process, not through the queue.
+
+| Tests | Needs running |
+|---|---|
+| Unit | Nothing (database, Redis and LLMs are mocked) |
+| Integration | Postgres only, with an empty throwaway database (`apda_test`) |
+| LLM evals | Postgres only (same test database), plus a real API key in `backend/.env` |
+| Load (Locust) | The full stack, via `infra/docker-compose.loadtest.yml` |
+
+The test database gets migrated and written to, so never point `TEST_DATABASE_URL` at your real `apda` database. Create it once, either in the Compose Postgres (first command below) or, on a native install, with `CREATE DATABASE apda_test OWNER apda;` (the `apda` user needs `CREATEROLE`, as in [Without Docker](#without-docker)).
 
 From `backend/`, after `uv sync --extra dev`:
 
@@ -90,17 +168,16 @@ Logs are the integration point: set `LOG_FORMAT=json` in `backend/.env` and ever
 
 Each answer has four tabs: **Report** (chart and text), **Data** (the query result and its SQL), **Agent steps** (the full trace) and **Token usage** (per LLM call). History is in the left sidebar; charts export to PNG/PDF and data to CSV.
 
-## Tech choices
+## Tech stack
 
 | Area | Choice | Why |
 |---|---|---|
-| Agents | LangGraph | Loops (SQL retry, reviewer re-route) need conditional edges; state is inspectable at every step |
-| Computation | LLM-written SQL on Postgres views, checked by `sqlglot`, run read-only | SQL is standard and LLMs write it well; the checks and a read-only role keep it safe |
-| Data | One JSONB table + typed views generated per dataset | New files need no new tables; totals and hierarchies are inferred from the numbers |
-| Queue / live trace | SAQ on Redis, Redis Streams → SSE | Async-native; a late subscriber replays the trace from the start |
-| LLMs | OpenAI + AWS Bedrock behind one factory | Two clouds; per-call fallback that is visible in the trace |
-| Frontend | Next.js, TypeScript, Recharts, CSS Modules | Charts drawn from backend specs; one CSS file per component |
-| Backend | FastAPI, SQLAlchemy async, Alembic, `uv` | Async end to end; typed settings and migrations |
+| Frontend | Next.js, TypeScript, Recharts, CSS Modules | Modern standard, support hot-reload |
+| Backend | FastAPI, SQLAlchemy async, Alembic, `uv` | Well supported, async-native |
+| Database | PostgreSQL | Supports JSONB table + typed views generated per dataset |
+| Queue | SAQ on Redis | Async-native; Redis Streams → SSE |
+| Agents | LangGraph | Modern standard, facilitates ReAct flow |
+| LLMs | OpenAI + AWS Bedrock behind one factory | Two clouds provider requirement |
 
 ## Repository
 
