@@ -6,51 +6,7 @@ Ask a question about Singapore government statistics in plain English; a team of
 - **Numbers come from the database, never the LLM.** Agents write SQL; the SQL is checked, then run read-only. Every number in the report is verified against the query result.
 - **Two LLM providers** (OpenAI, AWS Bedrock) with automatic per-call fallback.
 
-## How it works
-
-**Request flow.** The API only accepts questions and relays progress; a separate worker does the slow work.
-
-```mermaid
-flowchart LR
-    B["Browser<br/>(Next.js)"] -- "POST /api/queries" --> A["API<br/>(FastAPI)"]
-    A -- enqueue --> R["Redis<br/>queue + trace streams"]
-    R -- job --> W["Worker<br/>(SAQ + LangGraph)"]
-    W -- "each agent step" --> R
-    R -- "trace stream" --> A
-    W <--> L["LLMs<br/>OpenAI / Bedrock"]
-    W <--> P[("PostgreSQL<br/>data views, runs")]
-    A -- "live steps (SSE)" --> B
-    linkStyle default stroke-width:4px
-```
-
-**Agent pipeline**, run by the worker for each question:
-
-```mermaid
-flowchart LR
-    I[intent] -->|answerable| C[coordinator]
-    I -->|no dataset covers it| E1([end])
-    C --> X[extraction]
-    X --> AN["analytics<br/>ReAct SQL planner"]
-    AN --> RW[report_writer]
-    RW --> V[validator]
-    V --> RV[reviewer]
-    RV -->|pass| E2([end])
-    RV -.->|wrong analysis, once| AN
-    RV -.->|poor report, once| RW
-    linkStyle default stroke-width:4px
-```
-
-| Agent | Job |
-|---|---|
-| intent | Restates the question precisely; declines what no dataset covers |
-| coordinator | Picks the relevant datasets |
-| extraction | Maps them to typed views; reports data-quality facts |
-| analytics | ReAct loop: explores the views, writes SQL, fixes rejected queries |
-| report_writer | Writes the report from the query result only |
-| validator | Checks every number in the report against the result (code, no LLM) |
-| reviewer | Judges whether the answer fits the question; sends it back once if not |
-
-Design, trade-offs and rejected alternatives: [ARCHITECTURE.md](ARCHITECTURE.md). Where it would go next, for secure government use: [INNOVATION.md](INNOVATION.md).
+Architecture, agent pipeline and design decisions: [ARCHITECTURE.md](ARCHITECTURE.md). Where it would go next, for secure government use: [INNOVATION.md](INNOVATION.md).
 
 ## Setup & run
 

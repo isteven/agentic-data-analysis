@@ -12,7 +12,7 @@ frontend, FastAPI backend, SAQ worker on Redis, PostgreSQL, deployed with Docker
 ## Where to look first
 
 - **`ARCHITECTURE.md`**: the design and the reasons behind it, including rejected
-  alternatives. Its §2 table says what is built vs. planned per layer. Read it before any
+  alternatives. Read it before any
   non-trivial change, and update it in the same PR when a change alters the design.
 - **`DATA_SOURCES.md`**: dataset catalog, provenance, known data quirks.
 - **`TESTING.md`**: test layers, hallucination checks, results.
