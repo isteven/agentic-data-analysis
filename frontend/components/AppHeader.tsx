@@ -13,8 +13,8 @@ export function AppHeader({ onNewChat }: { onNewChat: () => void }) {
         <Image src={logo} alt="" className={styles.logo} priority />
         <span className={styles.titleOnly}>POLICY DATA ANALYTICS</span>
       </Link>
-      <button onClick={onNewChat} className={styles.outlineButton}>
-        New Chat
+      <button onClick={onNewChat} className={styles.outlineButton} aria-label="New Chat">
+        + New
       </button>
     </header>
   );
