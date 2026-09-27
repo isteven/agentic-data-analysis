@@ -2,7 +2,7 @@
 question always gets the same chart; the planner only suggests which columns to plot.
 Every answer with a number gets a chart."""
 
-from app.agents.chart import MAX_BAR_CATEGORIES, TOP_CATEGORIES, build_chart_spec
+from app.agents.chart import MAX_BAR_CATEGORIES, TOP_CATEGORIES, build_chart_spec, time_columns_in
 from app.data.sql_runner import QueryResult
 
 CATALOG = {
@@ -129,3 +129,15 @@ def test_a_short_list_keeps_the_query_order():
     chart = spec(result(["sex", "value"], [["Male", 2.0], ["Female", 1.0]]), {"x": "sex", "y": ["value"], "best": "lowest"})
 
     assert chart["sort"] is None
+
+
+def test_time_columns_are_the_result_columns_the_profile_marks_as_time():
+    # The Data tab shows these as labels (2020, not 2,020); the role comes from the
+    # profile, so any dataset's time column works without naming it.
+    res = result(["year", "sex", "value"], [[2020, "Male", 1.5]])
+    assert time_columns_in(res, CATALOG, ["v"]) == ["year"]
+
+
+def test_no_time_columns_when_the_result_has_none():
+    res = result(["station", "value"], [["Jurong East", 12.0]])
+    assert time_columns_in(res, CATALOG, ["v"]) == []

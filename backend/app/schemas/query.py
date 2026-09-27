@@ -41,6 +41,8 @@ class Analysis(BaseModel):
     rows: list[list] = []
     truncated: bool = False
     reason: str | None = None
+    # Result columns the profile marks as time: shown as labels (2020), not quantities.
+    time_columns: list[str] = []
     chart: ChartSpec | None = None
 
 

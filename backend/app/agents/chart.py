@@ -82,6 +82,16 @@ def _problem(suggestion: dict, labels: list[str], values: list[str], result: Que
     return None
 
 
+def _time_columns(catalog: dict[str, list[dict]], views: list[str]) -> set[str]:
+    return {c["column"] for v in views for c in catalog.get(v, []) if c["role"] == "time"}
+
+
+def time_columns_in(result: QueryResult, catalog: dict[str, list[dict]], views: list[str]) -> list[str]:
+    """Result columns the profile marks as time, in result order."""
+    time_columns = _time_columns(catalog, views)
+    return [c for c in result.columns if c in time_columns]
+
+
 def build_chart_spec(
     suggestion: dict | None, result: QueryResult, catalog: dict[str, list[dict]], views: list[str]
 ) -> dict:
@@ -92,7 +102,7 @@ def build_chart_spec(
     shows the end of the list the question is about (the planner's `best`) whatever
     order the SQL returned; None = query order.
     """
-    time_columns = {c["column"] for v in views for c in catalog.get(v, []) if c["role"] == "time"}
+    time_columns = _time_columns(catalog, views)
     numeric = _numeric_columns(result)
     values = [c for c in numeric if c not in time_columns]
     labels = [c for c in result.columns if c not in values]
