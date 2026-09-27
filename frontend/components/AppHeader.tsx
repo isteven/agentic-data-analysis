@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import logo from "@/app/logo.webp";
+import logo from "@/app/logo.png";
 import styles from "./AppHeader.module.css";
 
 /** Full-width app bar above both the history sidebar and the main pane. New Chat is
