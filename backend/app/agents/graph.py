@@ -5,6 +5,7 @@ from functools import partial
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from app.agents.llm import LlmCallLimitReached
 from app.agents.nodes.analytics import analytics_node
 from app.agents.nodes.coordinator import coordinator_node
 from app.agents.nodes.extraction import extraction_node
@@ -21,6 +22,12 @@ logger = logging.getLogger(__name__)
 
 Node = Callable[[AgentState], Awaitable[AgentState]]
 
+# No digits: the validator would flag a number the query result doesn't contain.
+LIMIT_NOTE = (
+    "*Stopped early: this question reached its limit of LLM calls, so the remaining steps "
+    "were skipped. The answer may be incomplete or not fully checked.*"
+)
+
 
 def guarded(node_name: str, node: Node) -> Node:
     """Error boundary for one graph step: a failure is logged, recorded as the step's
@@ -34,6 +41,20 @@ def guarded(node_name: str, node: Node) -> Node:
     async def run(state: AgentState) -> AgentState:
         try:
             return await node(state)
+        except LlmCallLimitReached as exc:
+            # Expected, not a fault: no stack trace. The kept answer gets a visible note
+            # (once), since a re-route cut short leaves an answer the reviewer rejected.
+            logger.warning(
+                "LLM call limit reached node=%s run_id=%s", node_name, state.get("run_id")
+            )
+            state["errors"].append({"node_name": node_name, "message": str(exc)})
+            emit_trace(state, node_name, "observation", f"{exc}; step skipped.")
+            report = state.get("report_markdown") or ""
+            if LIMIT_NOTE not in report:
+                state["report_markdown"] = (
+                    f"{report}\n\n---\n{LIMIT_NOTE}" if report else LIMIT_NOTE
+                )
+            return state
         except Exception as exc:  # the boundary's job; logged with its stack
             logger.exception("[DEBUG] node=%s run_id=%s failed", node_name, state.get("run_id"))
             message = f"{type(exc).__name__}: {exc}"
