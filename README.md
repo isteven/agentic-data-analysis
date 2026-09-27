@@ -8,6 +8,10 @@ Ask a question about Singapore government statistics in plain English; a team of
 
 Architecture, agent pipeline and design decisions: [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Demo
+
+https://github.com/user-attachments/assets/9a829e78-75cb-4423-932f-7b6dbfeb8e82
+
 ## Setup & run
 
 ### Docker Compose
