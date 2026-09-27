@@ -4,125 +4,137 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Agentic Policy Data Analytics Platform: a natural-language query interface over real
-Singapore government datasets (data.gov.sg, MOM), answered via an LLM pipeline with a
-Next.js frontend and FastAPI backend, deployed via Docker Compose.
+Agentic Policy Data Analytics Platform: a natural-language query interface over Singapore
+government datasets (data.gov.sg, MOM). A LangGraph multi-agent pipeline picks datasets,
+has the database compute the numbers, writes a cited report and checks it. Next.js
+frontend, FastAPI backend, SAQ worker on Redis, PostgreSQL, deployed with Docker Compose.
 
-**Read `ARCHITECTURE.md` and `DATA_SOURCES.md` before making non-trivial changes.**
-`ARCHITECTURE.md` is the living design doc for the full target system (multi-agent
-LangGraph pipeline, SAQ/Redis worker, multi-provider LLM abstraction, SSE trace
-streaming, cost tracking, etc.) — it explains *why* things are shaped the way they are,
-including rejected alternatives. See its §2 for a standing spec-vs-actual status
-table per layer. `DATA_SOURCES.md` documents the dataset catalog, provenance, and known
-data-quality quirks (sentinel values, sheet-naming drift, classification breaks) that the
-seed script works around.
+## Where to look first
 
-**Current implementation status: M1 is complete; M2 is in progress.** The real 5-node
-LangGraph pipeline (coordinator → extraction → analytics → report_writer → validator) is
-built and merged to `main`. The analytics node is a ReAct SQL planner
-(`app/agents/planner.py`): it queries typed Postgres views over the stored dataset rows,
-shaped by structure inferred at ingest, through a gate + read-only runner
-(`app/data/sql_gate.py`, `sql_runner.py`). The live data.gov.sg API client exists but no
-current dataset uses `mode: api`. Still outstanding from M2: the SAQ worker task exists
-(`backend/app/worker.py`) but no route enqueues it yet — `/api/queries` still runs the
-graph synchronously in-request; there is no SSE trace streaming yet (the frontend
-fetches the trace once, after the run completes); Bedrock is stubbed, not live; no
-cost/token tracking yet. Don't assume any component described in `ARCHITECTURE.md`
-exists in code without checking; `git log` and the actual `backend/app/` tree are the
-source of truth for what's built vs. planned. `solutioning.md` and
-`project-management.md` (decision log and milestone tracker) are intentionally
-gitignored and local-only to the author's machines — they will not exist in a fresh
-clone.
+- **`ARCHITECTURE.md`**: the design and the reasons behind it, including rejected
+  alternatives. Its §2 table says what is built vs. planned per layer. Read it before any
+  non-trivial change, and update it in the same PR when a change alters the design.
+- **`DATA_SOURCES.md`**: dataset catalog, provenance, known data quirks.
+- **`TESTING.md`**: test layers, hallucination checks, results.
+- **The code is the source of truth.** Don't assume something described in a doc exists
+  without checking `backend/app/` and `git log`.
+- `solutioning.md` (decision log) and `project-management.md` (progress tracker) are
+  gitignored and local-only; they won't exist in a fresh clone.
 
 ## Commands
 
-### Backend (`backend/`)
-
-Dependency management is `uv`, not plain pip/poetry.
+### Backend (`backend/`, managed with `uv`, not pip/poetry)
 
 ```
-uv sync                                    # install deps into backend/.venv
-uv run alembic upgrade head                # apply migrations
-uv run python -m scripts.seed_datasets     # seed datasets (idempotent, content-hash based)
+uv sync --extra dev                        # deps incl. pytest (a plain `uv sync` drops them)
+uv run alembic upgrade head                # migrations (also run on app startup)
+uv run python -m scripts.seed_datasets     # seed datasets (also run on app startup)
 uv run uvicorn app.main:app --reload --port 8000
-uv run ruff check .
+uv run ruff check .                        # enforced in CI
 uv run black .
+PYTHONPATH=. uv run pytest tests/unit      # no DB, no LLM
+
+# Integration tests: real Postgres (e.g. the Compose db), throwaway database
+TEST_DATABASE_URL=postgresql+asyncpg://apda:apda@localhost:5432/apda_test   PYTHONPATH=. uv run pytest tests/integration
+
+# LLM evals: real models, costs API calls; run only when asked
+RUN_LLM_EVALS=1 TEST_DATABASE_URL=... PYTHONPATH=.   uv run pytest tests/integration/test_llm_evals.py -s
 ```
 
-The app's lifespan hook (`app/main.py`) runs Alembic migrations and the seed script
-automatically on startup — the manual commands above are for running them standalone
-(e.g. after schema/data changes) or when iterating outside the full app startup.
-
-Unit tests live in `backend/tests/unit/` (no DB, no LLM). Install dev deps with
-`uv sync --extra dev` (a plain `uv sync` drops pytest), then run
-`PYTHONPATH=. uv run pytest tests/unit` from `backend/`. No integration tests yet.
+The seed re-runs only when a file's content hash or `PROFILER_VERSION` changes, and
+prunes datasets removed from the manifest.
 
 ### Frontend (`frontend/`)
 
 ```
 npm install
-npm run dev      # next dev
+npm run dev
+npm test          # Vitest
+npm run lint
 npm run build
-npm run lint      # eslint
+npx tsc --noEmit  # typecheck (CI runs it)
 ```
 
-### Docker Compose (primary way to run the full stack)
+Change `package-lock.json` only with npm 10 (e.g. in `node:20-slim`); npm 11 prunes
+optional packages and breaks `npm ci` in CI.
+
+### Docker Compose (the primary way to run the stack)
 
 ```
 cd infra
-docker compose up --build
+docker compose up --build                                                     # db, redis, backend, worker, frontend
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build     # frontend hot reload
+docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up        # mock LLM + apda_load DB, for Locust
 ```
 
-Brings up `db` (postgres:16), `redis` (redis:7, not yet wired into Compose as a worker
-service — `backend/app/worker.py`'s SAQ task exists but nothing enqueues it yet),
-`backend`, `frontend`. Requires
-`backend/.env` and `frontend/.env` to exist first (copy from the `.env.example` in
-each directory — **each service owns its own env file, there is no root `.env`**).
+Needs `backend/.env` and `frontend/.env` (copy each from its `.env.example`). **Each
+service owns its own env file; there is no root `.env`.** Health: `GET /api/health`
+(liveness), `GET /api/health/ready` (Postgres, Redis, worker).
 
-### Running without Docker
+Without Docker: native Postgres and Redis, then from `backend/` run the API (`uvicorn`
+above) and the worker (`uv run python -m saq app.worker.settings_dict`), plus
+`npm run dev` in `frontend/`. Point `DATABASE_URL` and `REDIS_URL` in `backend/.env` at
+`localhost` instead of the Compose service names.
 
-The current code path (sync FastAPI route running the LangGraph pipeline in-request, no
-SAQ/Redis usage yet) only actually needs Postgres — not Redis — so it's runnable with a
-native Postgres install:
-`uv sync` → `uv run alembic upgrade head` → `uv run python -m scripts.seed_datasets` →
-`uv run uvicorn app.main:app --port 8000`, plus `npm run dev` in `frontend/`. Point
-`DATABASE_URL` in `backend/.env` at `localhost` instead of the Compose service name `db`.
+## Rules for changing code
 
-## Architecture notes worth knowing before editing
+### Agents and LLMs
+- **Get models only through `get_chat_model()`** (`app/llm/provider_factory.py`), via
+  `node_model(state, node, tier)` in agent nodes. Never import `langchain_openai` /
+  `langchain_aws` elsewhere: the factory is where provider choice, tiering and fallback
+  (with token tracking) happen.
+- **The database computes every number; an LLM never does.** LLMs interpret the
+  question, choose what to compute and judge the result. Don't add a step where an LLM
+  produces or re-types data values.
+- **LLM-written SQL goes through the gate and the read-only runner**
+  (`app/data/sql_gate.py`, `sql_runner.py`). Don't bypass or loosen either; each layer
+  alone must stop a write.
+- **Every node reports what it does with `emit_trace()`** (reasoning / action /
+  observation); the trace is the user-facing record of the agents' reasoning.
+- **A failing step must not kill the run.** Record the error, trace it and let the run
+  finish as `partial` with an honest explanation.
 
-- **Provider abstraction**: agent/service code must go through
-  `get_chat_model()` in `backend/app/llm/provider_factory.py`, never import
-  `langchain_openai`/`langchain_aws` directly — this is the single swap point for
-  provider selection, tiering (`fast`/`quality`), and (eventually) fallback logic.
-- **Dataset manifest**: `backend/data/manifest.yaml` is the catalog of every dataset —
-  source, local file path, format, and `mode: file` vs `mode: api`. Each dataset
-  declares its own extraction mode; this is a property of the dataset, not a per-query
-  toggle (see `ARCHITECTURE.md` §4.5 for why).
-- **Don't rely on hardcoded values or variables** as there can be more CSV files (or any other data format) with different structures. This is an agentic application and it should be dynamic enough to cater for various data structures.
-- **Seed script** (`backend/scripts/seed_datasets.py`) parses each file, profiles it,
-  stores its rows in `dataset_records` and rebuilds the typed views in the `data`
-  schema. Which rows are totals, how values nest and which measures may be summed is
-  inferred from the numbers (`app/data/structure.py`), not declared per dataset. It
-  re-seeds when a file's content hash or `PROFILER_VERSION` changes, and prunes
-  datasets removed from the manifest.
-- **Incoming data is curated mock data**: files in `backend/data/incoming/` are
-  derived from public downloads but edited (swapped, trimmed); don't treat drift from
-  the published originals as a bug.
-- **SQLAlchemy models use `sqlalchemy.dialects.postgresql.UUID` as the primary key type
-  on every table** (`backend/app/models/*.py`), plus JSONB columns. This is
-  Postgres-specific and deliberate — Postgres is the only supported database engine, by
-  design, not as a gap to eventually fill. (`ARCHITECTURE.md` §5 previously floated a
-  SQLite unit-test fallback; dropped — true unit tests mock the DB layer instead, and
-  tests that need a real engine use real Postgres via CI service containers, so a second
-  engine would only have duplicated that tier while catching fewer real bugs.)
-- **Excel parsing** (`backend/app/data/parsers/excel_parser.py`) is hand-rolled against
-  the MOM `F2` sheet's specific layout (fixed header row, sex/hours-bucket row
-  structure, blank-row footer boundary) — it is not a general-purpose Excel reader, and
-  assumes the exact sheet shape documented in `DATA_SOURCES.md`.
-- **Env files are per-service, not shared**: `backend/.env` / `backend/.env.example`
-  and `frontend/.env` / `frontend/.env.example` are separate, each read only by their
-  own app. There is no root-level `.env`. `docker-compose.yml`'s `env_file` for each
-  service points at that service's own file.
+### Data
+- **No hardcoded column names, values or per-dataset rules.** New files with other
+  structures must work unchanged. Use the profile made at ingest (column roles: time /
+  dimension / measure; `app/data/profiler.py`) and the structure inferred from the
+  numbers (`app/data/structure.py`).
+- **Data rules live in the views, not the prompt.** If totals, overlaps or non-additive
+  measures cause wrong answers, fix the view shape; prompt instructions alone proved
+  unreliable.
+- **Files in `backend/data/incoming/` are curated mock data** (edited from public
+  downloads). Drift from the published originals is not a bug.
+- The Excel parser is built for the MOM `F2` sheet layout only; it isn't a general
+  Excel reader.
+- `backend/data/manifest.yaml` catalogs datasets (metadata only). `mode: file | api` is
+  a property of each dataset, not a per-query switch.
+
+### Backend
+- **PostgreSQL only, by design** (Postgres `UUID` keys, JSONB). Unit tests mock the
+  database; tests that need a real engine use real Postgres. Don't add a second engine.
+- Schema changes go through a new Alembic migration in `app/db/migrations/versions/`.
+- Keep database sessions short: open one per read or write, never across an LLM call.
+- Slow work belongs in the worker, not the API process. The API accepts, relays and
+  serves; `POST /api/queries` only enqueues.
+- Logs: use the module logger; lines logged during a run carry its `run_id`
+  automatically. Put details in `extra={...}` fields so JSON logs (`LOG_FORMAT=json`)
+  stay queryable.
+
+### Frontend
+- Plain `fetch` in effects, cancelled on cleanup (`AbortController`); no data-fetching
+  or global state library unless a concrete need appears.
+- Styles are CSS Modules; colours are theme tokens in `app/globals.css` (light and
+  dark), including `--chart-*` for charts.
+- Display rules come from the API (e.g. `analysis.time_columns`, chart spec), not from
+  column names in the frontend.
+
+### Testing and verification
+- **Tests first**, and confirm they fail before the change. Test behaviour, not
+  implementation; every test asserts something.
+- Before calling a change done: `ruff check` and backend unit tests; integration tests
+  when touching persistence, the graph or SQL; frontend `npm test`, lint, typecheck.
+- For changes to agents, prompts or data handling, also run a real question through the
+  running stack and check the report, the data and the trace, not only the tests.
 
 ## Branching Strategy
 
