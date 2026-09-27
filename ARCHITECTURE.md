@@ -1,4 +1,4 @@
-# Architecture -- Agentic Policy Data Analytics Platform
+# Architecture
 
 ## 1. Overview
 
@@ -19,7 +19,80 @@ flowchart LR
     linkStyle default stroke-width:4px
 ```
 
-Where it would go next, for secure government use: [INNOVATION.md](INNOVATION.md).
+### 1.1 End-to-end walkthrough
+
+From `docker compose up --build` to an answer on screen, using a real run: *"How did total retrenchments change from 2020 to 2024?"* (11 s, 6 LLM calls, 18 trace steps).
+
+**A. Startup** (`cd infra && docker compose up --build`)
+
+1. **Images build:** `backend` (also used by `worker`, with a different command) and `frontend`.
+2. **`db` (Postgres 16) and `redis` start**; `backend` and `worker` wait until both pass their health checks.
+3. **`backend` starts** (`app/main.py` lifespan), before serving any request:
+   1. runs the Alembic migrations (tables, and the read-only `data_reader` role);
+   2. runs the seed (`scripts/seed_datasets.py`): for each dataset in `manifest.yaml`, parses the file, profiles it, infers its structure and stores its rows in `dataset_records`. This is skipped if the file hash and `PROFILER_VERSION` are unchanged, and datasets removed from the manifest are pruned;
+   3. rebuilds the typed views in the `data` schema (section 4.4);
+
+   then serves on :8000.
+4. **`worker` starts** (`python -m saq app.worker.settings_dict`): connects to Redis, registers itself, and waits for jobs, running up to 4 at once.
+5. **`frontend` starts** on :3000. `GET /api/health/ready` now reports database, Redis and worker `ok`.
+
+**B. One question**
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as API
+    participant R as Redis
+    participant W as Worker
+    participant P as Postgres
+    participant L as LLMs
+    B->>A: POST /api/queries {query, provider}
+    A->>R: rate-limit check
+    A->>P: insert analysis_runs (status "running")
+    A->>R: enqueue run_query_task
+    A-->>B: 202 {run_id}
+    B->>A: GET /api/agent-trace/{run_id} (SSE)
+    R->>W: job
+    loop each agent step
+        W->>L: LLM call (5 of the 7 steps)
+        W->>P: SQL on the data views (analytics)
+        W->>R: XADD agent-trace:{run_id}
+        R-->>A: XREAD
+        A-->>B: SSE "trace"
+    end
+    W->>P: save run, trace, findings, LLM calls
+    W->>R: XADD "done"
+    A-->>B: SSE "done"
+    B->>A: GET /api/queries/{run_id}
+    A-->>B: report, data, chart spec, trace, token usage
+```
+
+1. **Submit** (browser → API): the chat page sends `POST /api/queries`. The API checks the rate limit, validates the request and creates the `analysis_runs` row with status `running`. It then enqueues `run_query_task` (180 s timeout, no retries) and returns `202` with the `run_id` straight away.
+2. **Follow** (browser → API): the browser opens `GET /api/agent-trace/{run_id}`. The API reads the run's Redis Stream from the start and forwards each entry as an SSE `trace` event. Steps written before the browser connected are replayed, not lost (section 2.4).
+3. **Run** (worker): picks up the job, tags every log line with the `run_id`, and runs the agent pipeline (section 2.1). Every `emit_trace` is appended to the stream as it happens:
+
+   | Step | In this run |
+   |---|---|
+   | intent (LLM) | Restates the question; `time_range` 2020-2024 |
+   | coordinator (LLM, fast tier) | Picks `retrenchment_by_residential_status` from the manifest |
+   | extraction (code) | Maps it to the view `data.retrenchment_by_residential_status`; traces the inferred data-quality facts |
+   | analytics (LLM, ReAct) | Looks at the view, then submits `SELECT year, retrench_total … WHERE year BETWEEN 2020 AND 2024`. The SQL gate checks it and Postgres runs it read-only; the 5 rows become findings, and the chart spec is a line (time axis, 5 periods) |
+   | report_writer (LLM) | Writes the report from the result only: 26,110 (2020) → 13,020 (2024) |
+   | validator (code) | Every number in the report matches a result value: grounded |
+   | reviewer (LLM) | `pass` |
+
+4. **Save** (worker → Postgres), in a fresh session:
+   - `analysis_runs` gets its final status, report, analysis (SQL, rows, chart spec), provider used and token totals;
+   - plus the `agent_traces`, `findings`, `analysis_run_datasets` and `llm_calls` rows.
+
+   The worker then writes `done` to the stream, which expires 1 h later, and logs `run finished`.
+5. **Show** (browser): on `done`, the browser fetches `GET /api/queries/{run_id}` and renders the answer's tabs:
+   - **Report:** the chart, then the text;
+   - **Data:** the rows and the SQL;
+   - **Agent steps:** the full trace;
+   - **Token usage:** calls per model.
+
+   The run also appears in the History sidebar. If the stream breaks or goes silent for 45 s, the browser polls `GET /api/queries/{run_id}` instead.
 
 ## 2. Agent design
 
@@ -239,4 +312,4 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 - Provider-native prompt caching; semantic (embedding-based) matching of repeat questions.
 - Vector database / RAG over past analyses.
 - Streaming the report text token by token.
-- Production concerns (for the Innovation Assessment): SSO/RBAC, audit logging, network isolation, data classification.
+- Production concerns: SSO/RBAC, audit logging, network isolation, data classification.

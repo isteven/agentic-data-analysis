@@ -17,7 +17,7 @@ frontend, FastAPI backend, SAQ worker on Redis, PostgreSQL, deployed with Docker
 - **`DATA_SOURCES.md`**: dataset catalog, provenance, known data quirks.
 - **`TESTING.md`**: test layers, hallucination checks, results.
 - **The code is the source of truth.** Don't assume something described in a doc exists
-  without checking `backend/app/` and `git log`.
+  without checking `frontend/` and `backend/` and `git log`.
 - `solutioning.md` (decision log) and `project-management.md` (progress tracker) are
   gitignored and local-only; they won't exist in a fresh clone.
 
