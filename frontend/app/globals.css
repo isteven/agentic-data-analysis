@@ -1,10 +1,14 @@
 /* ============================================================================
    Theme: every colour in the app. Change a value here and every component
    using it follows. Components never hardcode colours; they use var(--...).
+   One theme only (dark): there is no light mode.
    ========================================================================= */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Dark only: also darkens the browser's own parts (scrollbars, form defaults). */
+  color-scheme: dark;
+
+  --background: #341539;
+  --foreground: #ededed;
   --color-1: #4a044e;
   --color-2: #4e042d;
   --color-3: #25044e;
@@ -12,42 +16,42 @@
   --color-5: #7b37e2;
 
   /* Text */
-  --text-body: #27272a;      /* report text, table cells, trace content */
-  --text-secondary: #3f3f46; /* outline buttons, inactive sidebar items */
-  --text-muted: #71717a;     /* labels, hints, inactive tabs */
+  --text-body: #f1f1f1;      /* report text, table cells, trace content */
+  --text-secondary: #e5e5e5; /* outline buttons, inactive sidebar items */
+  --text-muted: #cccccc;     /* labels, hints, inactive tabs */
   --text-subtle: #a1a1aa;    /* timestamps, footnotes */
   --text-brave: #666666;
 
   /* Header bar: its background is --foreground, so this must contrast with it */
-  --header-main: #d8b4fe;
+  --header-main: #684c76;
 
   /* Surfaces and lines */
-  --background-sidebar: #fafafa; /* history sidebar, suggestion area */
-  --surface: #f4f4f5;        /* active sidebar item, inline code */
-  --surface-light: #e4e4e7;  /* question bubble */
-  --hover-bg: #fafafa;
-  --input-bg: #ffffff;
-  --border: #e4e4e7;
-  --border-light: #d4d4d8;   /* suggestion cards, tab bar, trace dividers */
-  --border-strong: #d4d4d8;  /* buttons, inputs */
-  --divider: #f4f4f5;
+  --background-sidebar: #2e1632; /* history sidebar, suggestion area */
+  --surface: #27272a;        /* active sidebar item, inline code */
+  --surface-light: #4f4f57;  /* question bubble */
+  --hover-bg: #18181b;
+  --input-bg: #18181b;
+  --border: #27272a;
+  --border-light: #999999;   /* suggestion cards, tab bar, trace dividers */
+  --border-strong: #3f3f46;  /* buttons, inputs */
+  --divider: #27272a;
 
   /* Accent: active tab, send button */
   --accent: var(--foreground);
   --accent-contrast: var(--background);
 
   /* Feedback */
-  --danger: #dc2626;
-  --warning-bg: #fffbeb;
-  --warning-text: #92400e;
+  --danger: #f87171;
+  --warning-bg: #451a03;
+  --warning-text: #fde68a;
   --live-dot: #3b82f6;
 
   /* Badges (run status, trace step type) */
-  --badge-blue-bg: #dbeafe;     --badge-blue-fg: #1e40af;
-  --badge-amber-bg: #fef3c7;    --badge-amber-fg: #92400e;
-  --badge-green-bg: #d1fae5;    --badge-green-fg: #065f46;
-  --badge-red-bg: #fee2e2;      --badge-red-fg: #991b1b;
-  --badge-neutral-bg: #f4f4f5;  --badge-neutral-fg: #27272a;
+  --badge-blue-bg: #1e3a8a;     --badge-blue-fg: #bfdbfe;
+  --badge-amber-bg: #78350f;    --badge-amber-fg: #fde68a;
+  --badge-green-bg: #064e3b;    --badge-green-fg: #a7f3d0;
+  --badge-red-bg: #7f1d1d;      --badge-red-fg: #fecaca;
+  --badge-neutral-bg: #27272a;  --badge-neutral-fg: #e4e4e7;
 
   /* Status dots in the history sidebar */
   --dot-green: #10b981;
@@ -57,10 +61,10 @@
   --dot-neutral: #a1a1aa;
 
   /* Charts (components/ResultChart.tsx) */
-  --chart-grid: #e4e4e7;
-  --chart-tick: #52525b;
-  --chart-tooltip-bg: #ffffff;
-  --chart-tooltip-text: #27272a;
+  --chart-grid: rgb(255 255 255 / 0.3);
+  --chart-tick: #cccccc;
+  --chart-tooltip-bg: #27272a;
+  --chart-tooltip-text: #f1f1f1;
   --chart-series-1: #5e81ac;
   --chart-series-2: #bf616a;
   --chart-series-3: #a3be8c;
@@ -69,46 +73,6 @@
   --chart-series-6: #88c0d0;
   --chart-series-7: #ac4c78;
   --chart-series-8: #cacdc7;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #341539;
-    --background-sidebar: #2e1632;
-    --foreground: #ededed;
-
-    --text-body: #f1f1f1;
-    --text-secondary: #e5e5e5;
-    --text-muted: #cccccc;
-    --text-subtle: #a1a1aa;
-    --text-brave:#666666;
-
-    --header-main: #684c76;
-
-    --surface: #27272a;
-    --surface-light: #4f4f57;
-    --hover-bg: #18181b;
-    --input-bg: #18181b;
-    --border: #27272a;
-    --border-light: #999999;
-    --border-strong: #3f3f46;
-    --divider: #27272a;
-
-    --danger: #f87171;
-    --warning-bg: #451a03;
-    --warning-text: #fde68a;
-
-    --badge-blue-bg: #1e3a8a;     --badge-blue-fg: #bfdbfe;
-    --badge-amber-bg: #78350f;    --badge-amber-fg: #fde68a;
-    --badge-green-bg: #064e3b;    --badge-green-fg: #a7f3d0;
-    --badge-red-bg: #7f1d1d;      --badge-red-fg: #fecaca;
-    --badge-neutral-bg: #27272a;  --badge-neutral-fg: #e4e4e7;
-
-    --chart-grid: rgb(255 255 255 / 0.3);
-    --chart-tick: #cccccc;
-    --chart-tooltip-bg: #27272a;
-    --chart-tooltip-text: #f1f1f1;
-  }
 }
 
 /* ============================================================================

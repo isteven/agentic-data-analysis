@@ -40,7 +40,7 @@ export function exportTableAsCsv(analysis: Analysis, filename: string) {
  */
 async function captureChart(node: HTMLElement): Promise<{ dataUrl: string; width: number; height: number }> {
   const { width, height } = node.getBoundingClientRect();
-  // The page background, so light/dark text stays readable in the image.
+  // The page background, so the light text stays readable in the image.
   const backgroundColor = getComputedStyle(document.body).backgroundColor;
   const dataUrl = await toPng(node, { backgroundColor, pixelRatio: 2 });
   return { dataUrl, width, height };

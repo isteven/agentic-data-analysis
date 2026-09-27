@@ -17,7 +17,7 @@ import { CATEGORY, hasChart, toPoints } from "@/lib/chart-data";
 import type { Analysis } from "@/lib/types";
 import styles from "./ResultChart.module.css";
 
-// Theme tokens (app/globals.css), so charts follow light and dark mode; series
+// Theme tokens (app/globals.css), so charts use the app theme's colours; series
 // beyond the eighth wrap around.
 const SERIES_COUNT = 8;
 const seriesColor = (i: number) => `var(--chart-series-${(i % SERIES_COUNT) + 1})`;
