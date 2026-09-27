@@ -13,7 +13,7 @@ Ask a question about Singapore government statistics in plain English; a team of
 ```mermaid
 flowchart LR
     B["Browser<br/>(Next.js)"] -- "POST /api/queries" --> A["API<br/>(FastAPI)"]
-    A -- enqueue --> R[("Redis<br/>queue + trace streams")]
+    A -- enqueue --> R["Redis<br/>queue + trace streams"]
     R -- job --> W["Worker<br/>(SAQ + LangGraph)"]
     W -- "each agent step" --> R
     R -- "trace stream" --> A
