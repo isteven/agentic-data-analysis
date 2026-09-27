@@ -8,14 +8,36 @@ Ask a question about Singapore government statistics in plain English; a team of
 
 ## How it works
 
+**Request flow.** The API only accepts questions and relays progress; a separate worker does the slow work.
+
+```mermaid
+flowchart LR
+    B["Browser<br/>(Next.js)"] -- "POST /api/queries" --> A["API<br/>(FastAPI)"]
+    A -- enqueue --> Q[("Redis<br/>queue")]
+    Q --> W["Worker<br/>(SAQ + LangGraph)"]
+    W <--> L["LLMs<br/>OpenAI / Bedrock"]
+    W <--> P[("PostgreSQL<br/>data views, runs")]
+    W -- "each agent step" --> S[("Redis<br/>Stream")]
+    S --> A
+    A -- "live steps (SSE)" --> B
+    linkStyle default stroke-width:4px
 ```
-Browser (Next.js) ──POST /api/queries──▶ FastAPI ──enqueue──▶ SAQ worker (Redis)
-      ▲                                                            │
-      └──────── live agent steps (SSE) ◀── Redis Stream ◀──────────┤
-                                                                   ▼
-   intent → coordinator → extraction → analytics (ReAct SQL) → report_writer → validator → reviewer
-                                              ▲                                               │
-                                              └─────────── sent back on a wrong answer ───────┘
+
+**Agent pipeline**, run by the worker for each question:
+
+```mermaid
+flowchart LR
+    I[intent] -->|answerable| C[coordinator]
+    I -->|no dataset covers it| E1([end])
+    C --> X[extraction]
+    X --> AN["analytics<br/>ReAct SQL planner"]
+    AN --> RW[report_writer]
+    RW --> V[validator]
+    V --> RV[reviewer]
+    RV -->|pass| E2([end])
+    RV -.->|wrong analysis, once| AN
+    RV -.->|poor report, once| RW
+    linkStyle default stroke-width:4px
 ```
 
 | Agent | Job |
