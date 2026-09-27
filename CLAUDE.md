@@ -123,8 +123,8 @@ above) and the worker (`uv run python -m saq app.worker.settings_dict`), plus
 ### Frontend
 - Plain `fetch` in effects, cancelled on cleanup (`AbortController`); no data-fetching
   or global state library unless a concrete need appears.
-- Styles are CSS Modules; colours are theme tokens in `app/globals.css` (light and
-  dark), including `--chart-*` for charts.
+- Styles are CSS Modules; colours are theme tokens in `app/globals.css` (one dark
+  theme), including `--chart-*` for charts.
 - Display rules come from the API (e.g. `analysis.time_columns`, chart spec), not from
   column names in the frontend.
 
