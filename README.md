@@ -6,7 +6,7 @@ Ask a question about Singapore government statistics in plain English; a team of
 - **Numbers come from the database, never the LLM.** Agents write SQL; the SQL is checked, then run read-only. Every number in the report is verified against the query result.
 - **Two LLM providers** (OpenAI, AWS Bedrock) with automatic per-call fallback.
 
-Architecture, agent pipeline and design decisions: [ARCHITECTURE.md](ARCHITECTURE.md). Where it would go next, for secure government use: [INNOVATION.md](INNOVATION.md).
+Architecture, agent pipeline and design decisions: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Setup & run
 
