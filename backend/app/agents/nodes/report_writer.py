@@ -1,8 +1,26 @@
+import math
+
 from app.agents.llm import node_model
 from app.agents.state import AgentState, task_question
 from app.agents.trace import emit_trace
 
 NODE_NAME = "report_writer"
+
+# At least this many significant digits survive rounding, so a rounded number stays far
+# inside the validator's 1% tolerance.
+SIGNIFICANT_DIGITS = 6
+
+
+def format_number(value) -> str:
+    """How a result value is shown to the LLM, which copies numbers as it sees them. The
+    views type every measure as double precision, so a head count arrives as 26110.0."""
+    if not isinstance(value, float) or not math.isfinite(value):
+        return str(value)
+    if value.is_integer():
+        return str(int(value))
+    magnitude = math.floor(math.log10(abs(value)))
+    decimals = max(2, SIGNIFICANT_DIGITS - 1 - magnitude)
+    return f"{value:.{decimals}f}".rstrip("0").rstrip(".")
 
 
 def _format_findings(findings: list[dict]) -> str:
@@ -11,7 +29,7 @@ def _format_findings(findings: list[dict]) -> str:
     lines = []
     for f in findings:
         lines.append(
-            f"- {f['metric_name']} = {f['value']} (source: {f['dataset_id']}, field: {f['field_ref']})"
+            f"- {f['metric_name']} = {format_number(f['value'])} (source: {f['dataset_id']}, field: {f['field_ref']})"
         )
     return "\n".join(lines)
 
@@ -20,7 +38,7 @@ def _format_analysis(analysis: dict | None) -> str:
     if not analysis or not analysis.get("sql"):
         return "(no query result)"
     header = " | ".join(analysis["columns"])
-    rows = "\n".join(" | ".join(str(v) for v in row) for row in analysis["rows"][:50])
+    rows = "\n".join(" | ".join(format_number(v) for v in row) for row in analysis["rows"][:50])
     more = "\n(result truncated)" if analysis.get("truncated") else ""
     return (
         f"How the question was understood: {analysis.get('interpretation')}\n"
