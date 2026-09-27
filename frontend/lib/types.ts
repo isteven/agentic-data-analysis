@@ -66,6 +66,7 @@ export interface Analysis {
   rows: Cell[][];
   truncated: boolean;
   reason: string | null;
+  time_columns?: string[]; // shown as labels (2020, not 2,020); absent on older saved runs
   chart: ChartSpec | null;
 }
 

@@ -1,8 +1,8 @@
 import type { Analysis } from "@/lib/types";
 import styles from "./ResultTable.module.css";
 
-const format = (value: unknown) =>
-  typeof value === "number"
+const format = (value: unknown, isTime: boolean) =>
+  typeof value === "number" && !isTime
     ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
     : value === null
       ? "—"
@@ -11,6 +11,9 @@ const format = (value: unknown) =>
 /** The query result exactly as the database returned it, with the SQL that produced it. */
 export function ResultTable({ analysis }: { analysis: Analysis }) {
   if (analysis.columns.length === 0) return null;
+  // A year is a label, not a quantity: 2020, never 2,020.
+  const timeColumns = new Set(analysis.time_columns ?? []);
+  const isTime = analysis.columns.map((c) => timeColumns.has(c));
 
   return (
     <div className={styles.wrapper}>
@@ -32,8 +35,11 @@ export function ResultTable({ analysis }: { analysis: Analysis }) {
             {analysis.rows.map((row, r) => (
               <tr key={r}>
                 {row.map((cell, i) => (
-                  <td key={i} className={typeof cell === "number" ? `${styles.td} ${styles.number}` : styles.td}>
-                    {format(cell)}
+                  <td
+                    key={i}
+                    className={typeof cell === "number" && !isTime[i] ? `${styles.td} ${styles.number}` : styles.td}
+                  >
+                    {format(cell, isTime[i])}
                   </td>
                 ))}
               </tr>

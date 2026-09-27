@@ -52,3 +52,19 @@ def test_run_in_progress_has_no_token_usage_yet():
 
 def test_run_recorded_before_token_tracking_has_no_token_usage():
     assert _to_response(run(token_usage=None), [], []).token_usage is None
+
+
+def analysis(**extra):
+    return {"status": "answered", "columns": ["year", "v"], "rows": [[2020, 1.0]], **extra}
+
+
+def test_time_columns_reach_the_response():
+    r = AnalysisRun(id=uuid.uuid4(), query_text="q", status="completed")
+    r.chart_specs = analysis(time_columns=["year"])
+    assert _to_response(r, [], []).analysis.time_columns == ["year"]
+
+
+def test_run_saved_before_time_columns_has_none():
+    r = AnalysisRun(id=uuid.uuid4(), query_text="q", status="completed")
+    r.chart_specs = analysis()
+    assert _to_response(r, [], []).analysis.time_columns == []

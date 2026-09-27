@@ -13,7 +13,7 @@ import sqlglot
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlglot import exp
 
-from app.agents.chart import build_chart_spec
+from app.agents.chart import build_chart_spec, time_columns_in
 from app.agents.llm import node_model
 from app.agents.planner import run_planner
 from app.agents.state import AgentState, task_question
@@ -136,6 +136,7 @@ async def analytics_node(
         "rows": result.rows if result else [],
         "truncated": result.truncated if result else False,
         "reason": outcome.reason,
+        "time_columns": time_columns_in(result, catalog, views_in(result.sql)) if result else [],
         "chart": (
             build_chart_spec(outcome.chart_suggestion, result, catalog, views_in(result.sql))
             if result
