@@ -14,6 +14,15 @@ https://github.com/user-attachments/assets/9a829e78-75cb-4423-932f-7b6dbfeb8e82
 
 ## Setup & run
 
+### Get the code
+
+```bash
+git clone https://github.com/isteven/agentic-data-analysis.git
+cd agentic-data-analysis
+```
+
+All commands below start from this folder (the repository root).
+
 ### Docker Compose
 
 Requirements: Docker, an OpenAI API key (also add AWS Bedrock access if you want to test both providers)
