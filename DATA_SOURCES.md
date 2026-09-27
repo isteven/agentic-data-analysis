@@ -26,10 +26,6 @@ the numbers at ingest (see [How the data is understood](#how-the-data-is-underst
 | `mrt_to_junior_college_travel` | Travel time (minutes) and distance (km) from each of 189 MRT/LRT stations to each of 18 junior colleges / Millennia Institute | No time dimension: a complete 189 x 18 matrix | `data_gov_sg/TravellingDistancebetweenMRTLRTStationtoJuniorCollegesMillenniaInstitute.csv` |
 | `graduate_employment_survey` | Employment rates and salaries by university, school and degree | 2013-2024 | `data_gov_sg/GraduateEmploymentSurveyNTUNUSSITSMUSUSSSUTD.csv` |
 
-The travel-time file is deliberately unlike the others: no year column and no measure
-that makes sense to add up. It checks that nothing in the pipeline assumes every
-dataset is a yearly time series.
-
 ### From MOM (Ministry of Manpower)
 
 | Manifest id | Contents | Year | Local file |
@@ -38,17 +34,9 @@ dataset is a yearly time series.
 | `mom_usual_hours_by_occupation_2024` | same | 2024 | `mom/LFR2024_SectionF.xlsx` |
 | `mom_usual_hours_by_occupation_2025` | same | 2025 | `mom/LFR2025_SectionF.xlsx` |
 
-Originals: `https://stats.mom.gov.sg/iMAS_Tables1/LabourForce/LabourForce_<year>/LFR<year>_SectionF.xlsx`.
-The published workbooks hold 13 tables (`F1`-`F13`); the local copies keep only `F2`,
-the one loaded. The three files share a manifest `group`, so they become one combined
-view with a `year` column (taken from the manifest, since the sheet has none).
-
 ### Formats
 
-CSV (data.gov.sg) and Excel (MOM). The data.gov.sg live API client
-(`backend/app/data/api_client.py`: Datastore Search, pagination, retry with timeout,
-fallback to the local file) is built, but **no current dataset uses `mode: api`**:
-the one that did (job vacancy by industry) was removed in the dataset swap.
+CSV (data.gov.sg) and Excel (MOM).
 
 ## How the data is understood
 
@@ -69,33 +57,17 @@ The results are stored in each dataset's `schema_profile`. The typed views in th
 `data` schema use them to expose only rows that are safe to add up: lowest-level
 values only, with `<column>_level_N` parent columns when there is a hierarchy.
 
-Checked against published figures: the MOM view adds up to 2312.0 / 2325.4 / 2339.8
-thousand for 2023-2025 against published totals of 2312.2 / 2326.1 / 2339.6. The small
-gap is rounding in the individual cells plus a few suppressed ones.
-
 ## Data quality
 
-Handled:
+Known imperfections
 
 - **Missing-value markers** (`-`, `na`, `N.A.` and similar) become missing, never 0.
   Treating "figure withheld" as zero would understate the statistics. The graduate
   survey alone has 768 `na` cells.
 - **Leading-zero codes** (e.g. postal code `039193`) are kept as text; reading them as
   numbers turns them into different, invalid codes. 342 station codes are affected.
-- **MOM sheet footers**: parsing stops at the first fully blank row, before the
+- **Data EOL**: parsing stops at the first fully blank row, before the
   `Source:` / `Note:` block.
-
-Known, not yet handled:
-
-- **Graduate survey degree names carry footnote markers** (`**`, `#`) in 181 rows, so
-  one programme can appear under more than one name.
-- **Totals stored as separate columns** (`retrench_total` next to `retrench_resident`
-  and `retrench_non_resident`) aren't recognised yet: structure inference compares
-  values within a column, not across columns. Those measures are treated as
-  non-additive for now. Resident + non-resident differs from the total by ±10 in 6 of
-  19 years, from rounding.
-- **Rounding adds up**: sums over lowest-level rows can differ slightly from a published
-  total (see above).
 
 ## Privacy
 
@@ -103,7 +75,7 @@ All datasets are public, aggregate statistics: no names, identifiers or row-leve
 personal data. Postal codes identify public stations and schools, not people.
 
 A production system handling non-public data would need further controls (access
-control, data classification, PII scanning at ingest); see the Innovation Assessment.
+control, data classification, PII scanning at ingest).
 
 ## LLM provider setup
 
