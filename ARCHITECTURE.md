@@ -104,6 +104,7 @@ Every node calls `emit_trace(state, node, step_type, content)` with `step_type` 
 - **Built:** every run ends. The worker saves in a fresh session; if saving fails the run is marked `failed`; the trace stream always gets `done`; a job timeout saves the run as `failed`. If the queue is unreachable, `POST /api/queries` marks the run `failed` and returns 503.
 - **Built:** gate-rejected or failing SQL is returned to the planner as an observation; the planner can decline (`cannot_answer`) and the run ends `partial` with the reason.
 - **Built:** automatic LLM provider fallback, per call (4.2).
+- **Built:** an LLM call limit per question (9.2): when reached, the remaining LLM steps are skipped, the run ends `partial` and the report says it stopped early.
 - **Built:** quality review sends a wrong analysis or a poor report back to the step that caused it, once; a second failure keeps the answer with a caveat.
 
 ## 4. LLM providers
@@ -238,6 +239,8 @@ PostgreSQL only, SQLAlchemy async ORM, Alembic migrations. All primary keys are 
 - **Built:** model tiering (fast / quality); prompts contain findings, never raw data.
 - **Built -- token usage:** `FallbackChatModel` attaches a LangChain callback to every attempt and records the token counts the provider reports (`usage_metadata`: input, output, cached input), the model that answered, latency and outcome (`app/llm/usage.py`). `node_model()` tags each call with its node and tier; rows go to `llm_calls`, per-model totals to `analysis_runs.token_usage`. Counts are the provider's own, not estimated. Totals are per model only: models tokenize differently, so a fallback run has one entry per model and no grand total. A failed attempt that got no answer has zero tokens; one that answered but failed parsing keeps its billed tokens.
 - **Why tokens, not dollars:** a dollar figure needs a hand-maintained price table and would still be an estimate; tokens are exact.
+- **Built -- LLM call limit per question:** `MAX_LLM_CALLS_PER_RUN` (default 20; 0 = off) caps the calls one run may make, counting every node, the reviewer's re-route and fallback retries. `node_model()` checks the run's `llm_calls` before each attempt; a refused call raises `LlmCallLimitReached`, which the step's error boundary records without a stack trace. The run keeps what it has, ends `partial`, and the report gets a note that it stopped early (important when a re-route is cut short: the kept answer is one the reviewer rejected).
+- **Why calls, not tokens or dollars:** a person can pick the number from the calls per run the Token usage tab already shows (6-11 measured, 11 with a re-route); a token budget is hard to choose, and a dollar budget needs a price table. `MAX_STEPS` (planner tool calls, per round) and `MAX_REVIEW_ROUNDS` still bound the loops themselves.
 - **Planned:** response cache for repeat questions; `max_tokens` cap per step; cache for live API data.
 
 ### 9.3 Security and privacy

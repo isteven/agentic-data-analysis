@@ -113,8 +113,8 @@ async def test_node_model_tags_each_call_with_node_and_tier(monkeypatch):
     monkeypatch.setattr(
         llm,
         "get_chat_model",
-        lambda provider=None, tier=None, on_fallback=None, on_usage=None: FallbackChatModel(
-            [("openai", ReportingModel())], on_fallback, on_usage
+        lambda provider=None, tier=None, on_fallback=None, on_usage=None, before_call=None: (
+            FallbackChatModel([("openai", ReportingModel())], on_fallback, on_usage)
         ),
     )
     state = new_state("q", "run-1")

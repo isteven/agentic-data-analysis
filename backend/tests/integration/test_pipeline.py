@@ -95,8 +95,8 @@ def llms(monkeypatch):
         monkeypatch.setattr(
             llm,
             "get_chat_model",
-            lambda provider=None, tier=None, on_fallback=None, on_usage=None: FallbackChatModel(
-                models, on_fallback, on_usage
+            lambda provider=None, tier=None, on_fallback=None, on_usage=None, before_call=None: (
+                FallbackChatModel(models, on_fallback, on_usage, before_call=before_call)
             ),
         )
         return real_node_model(state, node_name, model_tier)
@@ -346,3 +346,26 @@ async def test_a_late_failure_keeps_the_finished_report(seeded_db, llms):
     assert state["status"] == "partial"
     assert [e["node_name"] for e in state["errors"]] == ["reviewer"]
     assert any("Step failed (ConnectionError" in t for t in trace_text(state, "reviewer"))
+
+
+async def test_the_llm_call_limit_stops_a_rerun_and_marks_the_answer(seeded_db, llms, monkeypatch):
+    settings = llm.get_settings()
+    monkeypatch.setattr(
+        llm, "get_settings", lambda: settings.model_copy(update={"max_llm_calls_per_run": 6})
+    )
+    llms["coordinator"] = [("fake", Scripted(plan("retrenchment_by_residential_status")))]
+    llms["analytics"] = [("fake", Scripted(submit(TOTAL_2020, "All retrenchments"), submit(RESIDENTS_2020)))]
+    llms["report_writer"] = [("fake", Scripted(report("26,110 were retrenched in 2020."), report("unused")))]
+    llms["reviewer"] = [
+        ("fake", Scripted(Review(verdict="wrong_analysis", reason="Asked for residents."), Review(verdict="pass", reason="-")))
+    ]
+
+    state = await run()
+
+    # Calls 1-6: intent, coordinator, planner, report writer, reviewer (rejects), planner again.
+    # The rewritten report would be the 7th: refused, as is the second review.
+    assert len(state["llm_calls"]) == 6
+    assert state["status"] == "partial"
+    assert [e["node_name"] for e in state["errors"]] == ["report_writer", "reviewer"]
+    assert state["report_markdown"].count("Stopped early") == 1  # the rejected answer is marked
+    assert any("LLM call limit reached (6 calls" in t for t in trace_text(state, "report_writer"))

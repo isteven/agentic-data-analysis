@@ -18,6 +18,8 @@ Tier = Literal["fast", "quality"]
 FallbackHook = Callable[[str, str, Exception], None]
 # Called once per attempt, successful or not.
 UsageHook = Callable[[CallUsage], None]
+# Called before every attempt; raises to stop the call (e.g. a run's LLM call limit).
+CallGuard = Callable[[], None]
 
 
 def get_chat_model(
@@ -25,6 +27,7 @@ def get_chat_model(
     model_tier: Tier = "quality",
     on_fallback: FallbackHook | None = None,
     on_usage: UsageHook | None = None,
+    before_call: CallGuard | None = None,
 ) -> "FallbackChatModel":
     """The requested provider, backed by the fallback and then the default provider.
 
@@ -48,7 +51,7 @@ def get_chat_model(
         raise RuntimeError("No LLM provider is configured. " + " ".join(skipped))
     if skipped:
         logger.info("LLM providers skipped (not configured): %s", "; ".join(skipped))
-    return FallbackChatModel(models, on_fallback, on_usage)
+    return FallbackChatModel(models, on_fallback, on_usage, before_call=before_call)
 
 
 def build_provider(provider: ProviderName, model_tier: Tier) -> BaseChatModel:
@@ -81,10 +84,12 @@ class FallbackChatModel:
         on_fallback: FallbackHook | None = None,
         on_usage: UsageHook | None = None,
         configured_models: list[str | None] | None = None,
+        before_call: CallGuard | None = None,
     ):
         self._models = models
         self._on_fallback = on_fallback
         self._on_usage = on_usage
+        self._before_call = before_call
         # Read before any wrapping (bind_tools etc.), which hides the model's attributes.
         # Reported for an attempt that failed before any response named the model.
         self._configured = configured_models or [_configured_model(m) for _, m in models]
@@ -95,7 +100,11 @@ class FallbackChatModel:
 
     def _derive(self, fn: Callable[[Any], Runnable]) -> "FallbackChatModel":
         return FallbackChatModel(
-            [(n, fn(m)) for n, m in self._models], self._on_fallback, self._on_usage, self._configured
+            [(n, fn(m)) for n, m in self._models],
+            self._on_fallback,
+            self._on_usage,
+            self._configured,
+            self._before_call,
         )
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> "FallbackChatModel":
@@ -107,6 +116,9 @@ class FallbackChatModel:
     async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
         last_error: Exception | None = None
         for i, (name, model) in enumerate(self._models):
+            # Outside the try: a refused call is not a provider failure to fall back from.
+            if self._before_call:
+                self._before_call()
             collector = UsageCollector()
             started = time.perf_counter()
             try:

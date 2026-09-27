@@ -51,8 +51,8 @@ async def test_every_llm_call_is_logged_with_tokens_model_and_latency(logs, monk
     monkeypatch.setattr(
         llm,
         "get_chat_model",
-        lambda provider=None, tier=None, on_fallback=None, on_usage=None: FallbackChatModel(
-            [("openai", ReportingModel())], on_fallback, on_usage
+        lambda provider=None, tier=None, on_fallback=None, on_usage=None, before_call=None: (
+            FallbackChatModel([("openai", ReportingModel())], on_fallback, on_usage)
         ),
     )
 

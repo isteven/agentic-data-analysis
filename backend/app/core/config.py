@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     cors_origin: str = "http://localhost:3000"
     rate_limit_queries_per_minute: int = 10
+    # LLM calls one question may make, across every step, the reviewer's re-route and
+    # fallback retries. Runs typically make 6-11 (Token usage tab). 0 = no limit.
+    max_llm_calls_per_run: int = 20
     # SAQ's own default (10s) is far too short for a multi-node LangGraph run with
     # several LLM calls; a timed-out job is cancelled mid-run and, without this, was
     # left stuck at status "running" forever (the bug this setting exists to avoid).
