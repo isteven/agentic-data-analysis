@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Home from "@/app/(app)/page";
+import Home from "@/app/(shell)/page";
 import { AppShell } from "@/components/AppShell";
 
 // The watched run never finishes on its own: the test decides what happens to it.

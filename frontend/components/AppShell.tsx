@@ -16,7 +16,7 @@ const ShellContext = createContext<Shell>({ refreshHistory: () => {} });
 export const useShell = () => useContext(ShellContext);
 
 /**
- * Header and History sidebar around every page, rendered once by the (app) layout.
+ * Header and History sidebar around every page, rendered once by the (shell) layout.
  * Each page used to draw its own, so every navigation remounted the sidebar: its
  * collapsed state reset and History reloaded.
  */
